@@ -1,0 +1,315 @@
+:root {
+  --fondo: #f5f6f8;
+  --superficie: #ffffff;
+  --texto: #1b1f24;
+  --tenue: #555d68;
+  --borde: #c9ced6;
+  --primario: #0b5cab;
+  --primario-oscuro: #084a8a;
+  --peligro: #a4262c;
+  --ok: #1e6b3a;
+  --foco: #ffbf47;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  background: var(--fondo);
+  color: var(--texto);
+  font-family:
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    Roboto,
+    Arial,
+    sans-serif;
+  font-size: 16px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+img,
+svg {
+  max-width: 100%;
+}
+
+.saltar {
+  position: absolute;
+  left: -999px;
+  top: 0;
+  background: var(--superficie);
+  padding: 0.5rem 1rem;
+  z-index: 10;
+}
+.saltar:focus {
+  left: 0.5rem;
+}
+
+.cabecera {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  background: var(--superficie);
+  border-bottom: 1px solid var(--borde);
+}
+.cabecera ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.75rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.marca {
+  font-weight: 700;
+  color: var(--primario);
+  text-decoration: none;
+}
+.usuario {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  font-size: 0.9rem;
+  color: var(--tenue);
+}
+
+.contenedor {
+  max-width: 64rem;
+  margin: 0 auto;
+  padding: 1rem;
+}
+
+h1 {
+  font-size: 1.5rem;
+  margin: 0.5rem 0 1rem;
+}
+h2 {
+  font-size: 1.15rem;
+  margin: 1.25rem 0 0.5rem;
+}
+
+a {
+  color: var(--primario);
+}
+nav a {
+  display: inline-block;
+  padding: 0.35rem 0.25rem;
+}
+nav a.active {
+  font-weight: 700;
+  text-decoration: none;
+  border-bottom: 2px solid var(--primario);
+}
+
+.tarjeta {
+  background: var(--superficie);
+  border: 1px solid var(--borde);
+  border-radius: 8px;
+  padding: 1rem;
+}
+.estrecha {
+  max-width: 26rem;
+  margin: 2rem auto;
+}
+
+.lista,
+.rejilla {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.75rem;
+}
+.rejilla {
+  grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr));
+}
+.lista > li p {
+  margin: 0.25rem 0;
+}
+.num {
+  display: block;
+  font-size: 1.6rem;
+  font-weight: 700;
+}
+
+.fila {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.fila-linea {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  align-items: flex-end;
+  margin-bottom: 0.75rem;
+}
+.filtros {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  margin-bottom: 0.75rem;
+}
+.acciones {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  margin-top: 0.5rem;
+}
+
+label {
+  display: block;
+  font-weight: 600;
+  margin: 0.75rem 0 0.25rem;
+}
+label.inline {
+  display: inline-flex;
+  gap: 0.4rem;
+  align-items: center;
+  font-weight: 400;
+  margin: 0;
+}
+
+input,
+select,
+textarea {
+  width: 100%;
+  max-width: 100%;
+  padding: 0.5rem;
+  border: 1px solid var(--borde);
+  border-radius: 6px;
+  font: inherit;
+  background: #fff;
+  color: inherit;
+}
+input[type='checkbox'] {
+  width: auto;
+}
+.fila-linea input,
+.fila-linea select {
+  min-width: 9rem;
+}
+textarea {
+  min-height: 5rem;
+}
+fieldset {
+  border: 1px solid var(--borde);
+  border-radius: 6px;
+  margin: 1rem 0;
+  min-width: 0;
+}
+
+button,
+.boton {
+  display: inline-block;
+  padding: 0.55rem 0.9rem;
+  border: 1px solid var(--primario);
+  border-radius: 6px;
+  background: var(--primario);
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+}
+button:hover:not(:disabled),
+.boton:hover {
+  background: var(--primario-oscuro);
+}
+button.secundario,
+.boton.secundario {
+  background: transparent;
+  color: var(--primario);
+}
+button.peligro {
+  background: var(--peligro);
+  border-color: var(--peligro);
+}
+button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+:focus-visible {
+  outline: 3px solid var(--foco);
+  outline-offset: 2px;
+}
+
+.alerta {
+  border-left: 4px solid var(--peligro);
+  background: #fdecea;
+  color: #5b1014;
+  padding: 0.6rem 0.8rem;
+  margin: 0.75rem 0;
+  border-radius: 4px;
+}
+.aviso {
+  border-left: 4px solid var(--primario);
+  background: #e8f1fb;
+  padding: 0.6rem 0.8rem;
+  margin: 0.75rem 0;
+  border-radius: 4px;
+}
+.estado {
+  font-size: 0.8rem;
+  font-weight: 700;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--borde);
+}
+.estado-reservada,
+.estado-despachada {
+  background: #e8f1fb;
+}
+.estado-entregada {
+  background: #e6f4ea;
+  color: var(--ok);
+}
+.estado-cancelada {
+  background: #f1f1f1;
+  color: var(--tenue);
+}
+.tenue {
+  color: var(--tenue);
+  font-size: 0.85rem;
+}
+.borrador {
+  margin-top: 1rem;
+  padding: 0.75rem;
+  border: 2px dashed var(--primario);
+  border-radius: 8px;
+}
+.marca-ia {
+  display: inline-block;
+  background: #fff4cc;
+  border: 1px solid #d4b106;
+  padding: 0.15rem 0.5rem;
+  border-radius: 4px;
+  font-weight: 700;
+}
+
+@media (max-width: 480px) {
+  .contenedor {
+    padding: 0.75rem;
+  }
+  button,
+  .boton {
+    width: 100%;
+    text-align: center;
+  }
+  .acciones > * {
+    flex: 1 1 100%;
+  }
+}

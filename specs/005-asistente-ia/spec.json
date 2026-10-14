@@ -1,0 +1,318 @@
+{
+  "id": "SPEC-005",
+  "version": "0.2",
+  "name": "Asistente de IA",
+  "story": {
+    "id": "HU-05",
+    "as": "coordinador de una organización",
+    "want": "obtener un resumen de solicitudes pendientes que pueda revisar y aprobar, con la IA solo como ayuda",
+    "soThat": "priorice mejor la revisión sin que ninguna decisión ni movimiento de inventario dependa de la IA"
+  },
+  "requirements": [
+    "RF10",
+    "RF11",
+    "RF12",
+    "RNF04",
+    "RNF06"
+  ],
+  "description": "Resumen asistido por IA con entrada mínima, salida validada con esquema cerrado y en código, resumen determinista alternativo, aprobación única con auditoría, operación sin proveedor de pago, logs con correlationId y arranque reproducible.",
+  "inputs": [
+    {
+      "field": "requestIds",
+      "type": "arreglo de códigos de solicitud",
+      "validation": [
+        "de 1 a 20 elementos",
+        "sin repetidos",
+        "todas de la organización de la sesión",
+        "todas en estado ENVIADA"
+      ]
+    },
+    {
+      "field": "id del resumen (ruta)",
+      "type": "identificador",
+      "validation": [
+        "pertenece a la organización de la sesión",
+        "aún no aprobado"
+      ]
+    },
+    {
+      "field": "AI_PROVIDER",
+      "type": "variable de entorno",
+      "validation": [
+        "replay, fixture, http u off"
+      ]
+    },
+    {
+      "field": "AI_TIMEOUT_MS",
+      "type": "variable de entorno",
+      "validation": [
+        "5000 por defecto"
+      ]
+    },
+    {
+      "field": "campos enviados al adaptador",
+      "type": "objeto por solicitud",
+      "validation": [
+        "solo requestId, zona, prioridad, fechaRequerida, estado y observaciones"
+      ]
+    }
+  ],
+  "process": [
+    "Autenticar y comprobar que el rol es COORDINADOR (403 para AUDITOR y demás roles)",
+    "Validar la lista de códigos: cantidad, repetidos, existencia en la organización (404) y estado ENVIADA (409), todo antes de llamar al proveedor",
+    "Armar para cada solicitud solo los seis campos autorizados; nunca contraseñas, sesiones, nombre del solicitante ni datos de otra organización",
+    "Llamar al adaptador con un tiempo máximo de 5 segundos; con AI_PROVIDER igual a off no se llama a ningún proveedor",
+    "Interpretar la salida como texto no confiable: analizar JSON dentro de un try y validar con esquema estricto en los dos niveles y en código (identificadores del conjunto enviado y sin duplicados)",
+    "Si la salida es inválida, hay timeout o falla el proveedor, generar el resumen determinista alternativo con un aviso controlado",
+    "Guardar el intento con origen, resultado, identificadores y correlationId, y devolver un borrador marcado como asistencia de IA",
+    "Aprobar: solo COORDINADOR de la organización, una vez por resumen; registrar quién y cuándo, y un evento APROBAR_RESUMEN, sin tocar inventario, estados ni prioridad"
+  ],
+  "outputs": [
+    {
+      "condition": "salida del proveedor válida",
+      "result": "200 con origen PROVEEDOR, generadoConIA true, estado BORRADOR, aviso nulo y el resultado validado"
+    },
+    {
+      "condition": "salida inválida, timeout, fallo del proveedor o modo off",
+      "result": "200 con origen ALTERNATIVO, generadoConIA false, aviso controlado y resumen determinista"
+    },
+    {
+      "condition": "algún identificador ajeno o inexistente",
+      "result": "404 NO_ENCONTRADA sin llamar al proveedor y sin revelar existencia"
+    },
+    {
+      "condition": "alguna solicitud que no está ENVIADA",
+      "result": "409 ESTADO_INVALIDO sin llamar al proveedor"
+    },
+    {
+      "condition": "más de 20, ninguno o repetidos",
+      "result": "422 VALIDACION sin llamar al proveedor"
+    },
+    {
+      "condition": "aprobación de un resumen aún no aprobado",
+      "result": "200 con aprobador y fecha, y un evento APROBAR_RESUMEN"
+    },
+    {
+      "condition": "segunda aprobación del mismo resumen",
+      "result": "409 RESUMEN_YA_APROBADO sin evento nuevo"
+    },
+    {
+      "condition": "base sin respuesta en ready",
+      "result": "503 en /ready y 200 en /health"
+    }
+  ],
+  "businessRules": [
+    "La IA nunca decide, reserva, despacha, cambia prioridad ni escribe datos; es solo ayuda",
+    "El texto del proveedor y las observaciones de usuarios son no confiables y nunca se interpretan ni se ejecutan",
+    "La validación no se delega al prompt: esquema cerrado más comprobaciones en código",
+    "La prioridad que se muestra proviene de la solicitud, no del modelo",
+    "El resumen es un borrador identificable como asistencia de IA y solo el COORDINADOR lo aprueba, una sola vez",
+    "Se puede aprobar tanto el resumen de origen PROVEEDOR como el ALTERNATIVO; el origen queda guardado con la aprobación",
+    "recommendations puede venir vacío: el esquema fija solo el máximo de 5",
+    "El correlationId enviado por el cliente solo se acepta con letras, números, punto, guion y guion bajo, hasta 64 caracteres; si no, el servidor genera uno",
+    "El evento de aprobación tiene recurso de tipo AI_SUMMARY y el identificador del resumen",
+    "Aprobar deja constancia en auditoría y no cambia estado, inventario ni prioridad",
+    "Un fallo de la IA nunca bloquea el resto del sistema",
+    "El resumen alternativo es determinista: ordena por prioridad ALTA primero y luego por fecha requerida y toma como máximo 5",
+    "CI y demostración no dependen de un servicio de pago; los fixtures y la respuesta capturada bastan",
+    "Cada petición lleva un correlationId y los logs no contienen contraseñas, tokens ni encabezados de autorización",
+    "health indica proceso vivo y ready indica que la base responde, y son endpoints distintos",
+    "El arranque desde un clon limpio usa versiones fijadas, migraciones, seed y un comando documentado",
+    "Códigos de error: RESUMEN_YA_APROBADO, ESTADO_INVALIDO, NO_ENCONTRADA, PROHIBIDO, VALIDACION"
+  ],
+  "edgeCases": [
+    "Veinte identificadores exactamente (permitido) y veintiuno (rechazado)",
+    "Resumen de exactamente 600 caracteres y de 601",
+    "Cinco recomendaciones y seis",
+    "Recomendación con identificador repetido",
+    "Observaciones con etiquetas script o instrucciones tipo ignora las reglas",
+    "Timeout justo en el límite de 5 segundos",
+    "Salida con JSON válido pero con propiedad execute extra",
+    "Dos coordinadores de la misma organización aprueban el mismo resumen al mismo tiempo",
+    "Solicitud sin observaciones: el adaptador recibe observaciones nulas",
+    "Encabezado x-correlation-id con saltos de línea o más de 64 caracteres",
+    "Apagar la IA a mitad de operación con AI_PROVIDER igual a off"
+  ],
+  "acceptanceCriteria": [
+    {
+      "id": "AC-RF10-01",
+      "given": "el coordinador de ORG-A, A-001 y A-002 ENVIADA y el proveedor fixture AI-VALID",
+      "when": "envía POST /ai/summaries con los códigos A-001 y A-002",
+      "then": "responde 200 con origen PROVEEDOR, generadoConIA true, estado BORRADOR y el resumen validado, y se guarda un intento con origen, resultado y correlationId"
+    },
+    {
+      "id": "AC-RF10-02",
+      "given": "un adaptador espía en lugar del proveedor y A-001 y A-002 ENVIADA de ORG-A",
+      "when": "el coordinador pide el resumen",
+      "then": "el espía recibe por solicitud solo requestId, zona, prioridad, fechaRequerida, estado y observaciones, y nunca contraseñas, sesiones, nombre ni correo del solicitante, organización ni datos de ORG-B"
+    },
+    {
+      "id": "AC-RF10-03",
+      "given": "el coordinador de ORG-A autenticado y un espía que cuenta las llamadas al proveedor",
+      "when": "envía 0 códigos, 21 códigos y una lista con A-001 repetido",
+      "then": "las tres respuestas son 422 VALIDACION y el proveedor no recibe ninguna llamada; con exactamente 20 códigos válidos responde 200"
+    },
+    {
+      "id": "AC-RF10-04",
+      "given": "el coordinador de ORG-A autenticado y B-001 de ORG-B",
+      "when": "pide un resumen con los códigos A-001 y B-001",
+      "then": "responde 404 NO_ENCONTRADA, el proveedor no recibe ninguna llamada y el cuerpo no contiene datos de ORG-B"
+    },
+    {
+      "id": "AC-RF10-05",
+      "given": "el coordinador de ORG-A autenticado, A-001 ENVIADA y el borrador A-003",
+      "when": "pide un resumen con los códigos A-001 y A-003",
+      "then": "responde 409 ESTADO_INVALIDO y el proveedor no recibe ninguna llamada"
+    },
+    {
+      "id": "AC-RF10-06",
+      "given": "un auditor, un encargado de bodega y un solicitante de ORG-A autenticados",
+      "when": "cada uno envía POST /ai/summaries con A-001",
+      "then": "las tres respuestas son 403 PROHIBIDO y no se guarda ningún intento"
+    },
+    {
+      "id": "AC-RF11-01",
+      "given": "A-001 y A-002 ENVIADA y el fixture AI-JSON-BAD con salida JSON incompleta",
+      "when": "el coordinador pide el resumen",
+      "then": "responde 200 con origen ALTERNATIVO, un aviso controlado y un resumen determinista, y el intento queda guardado con el motivo del rechazo"
+    },
+    {
+      "id": "AC-RF11-02",
+      "given": "A-001 y A-002 ENVIADA y el fixture AI-FOREIGN-ID que recomienda un código no seleccionado",
+      "when": "el coordinador pide el resumen",
+      "then": "la salida se rechaza por identificador ajeno y la respuesta es el resumen alternativo sin ningún dato de ORG-B"
+    },
+    {
+      "id": "AC-RF11-03",
+      "given": "A-001 y A-002 ENVIADA y el fixture AI-EXTRA con una propiedad adicional execute",
+      "when": "el coordinador pide el resumen",
+      "then": "la salida se rechaza por propiedad extra, se usa el resumen alternativo y no se ejecuta ninguna acción"
+    },
+    {
+      "id": "AC-RF11-04",
+      "given": "el validador de salida y el conjunto de códigos enviado A-001 y A-002",
+      "when": "se prueban un resumen de 600 y de 601 caracteres, 5 y 6 recomendaciones, un reason de 240 y de 241 caracteres, evidenceFields con 0, 1, 3 y 4 elementos y una clave fuera de zona, prioridad, fechaRequerida y observaciones",
+      "then": "solo se aceptan los casos en el límite 600, 5, 240, 1 y 3, y los demás se rechazan"
+    },
+    {
+      "id": "AC-RF11-05",
+      "given": "el validador de salida y una salida con la misma solicitud A-001 en dos recomendaciones",
+      "when": "se valida la salida",
+      "then": "se rechaza por identificador duplicado y se usa el resumen alternativo"
+    },
+    {
+      "id": "AC-RF11-06",
+      "given": "A-001 ENVIADA con las observaciones del archivo untrusted-observation.txt y el fixture AI-INJECTION",
+      "when": "el coordinador pide el resumen",
+      "then": "responde 200 con origen ALTERNATIVO, el texto de script no aparece en la respuesta, y el inventario, los estados y la cantidad de eventos de auditoría son idénticos a los de antes"
+    },
+    {
+      "id": "AC-RF11-07",
+      "given": "el validador de salida y el conjunto de códigos enviado A-001 y A-002",
+      "when": "se prueba una salida con summary vacío, otra con reason vacío y otra con evidenceFields que repite la clave zona dos veces",
+      "then": "las tres se rechazan, porque el esquema cerrado exige texto no vacío y claves de evidencia sin repetir, y se usa el resumen alternativo"
+    },
+    {
+      "id": "AC-RF12-01",
+      "given": "un resumen generado por el proveedor o por el alternativo",
+      "when": "el coordinador lo ve en la pantalla de resumen",
+      "then": "aparece marcado con el texto Generado con asistencia de IA, con su origen y aviso, y existe un botón Aprobar aparte; el contenido de la IA se muestra solo como texto"
+    },
+    {
+      "id": "AC-RF12-02",
+      "given": "el resumen R1 en BORRADOR de ORG-A y el inventario y los estados registrados antes",
+      "when": "el coordinador de ORG-A envía POST /ai/summaries/R1/approve",
+      "then": "responde 200 con aprobador y fecha, se inserta un evento APROBAR_RESUMEN con recurso de tipo AI_SUMMARY y el identificador de R1, y el inventario, los estados y las prioridades de las solicitudes siguen idénticos"
+    },
+    {
+      "id": "AC-RF12-10",
+      "given": "el resumen R2 de origen ALTERNATIVO generado con AI_PROVIDER igual a off",
+      "when": "el coordinador de ORG-A lo aprueba",
+      "then": "responde 200, el intento conserva su origen ALTERNATIVO junto al aprobador y la fecha, se inserta un evento APROBAR_RESUMEN y el inventario y los estados no cambian"
+    },
+    {
+      "id": "AC-RF12-03",
+      "given": "el resumen R1 ya aprobado",
+      "when": "el coordinador lo aprueba por segunda vez",
+      "then": "responde 409 RESUMEN_YA_APROBADO y no hay un segundo evento APROBAR_RESUMEN"
+    },
+    {
+      "id": "AC-RF12-04",
+      "given": "el resumen R1 de ORG-A y el auditor de ORG-A y el coordinador de ORG-B",
+      "when": "cada uno envía POST /ai/summaries/R1/approve",
+      "then": "el auditor recibe 403 PROHIBIDO, el coordinador de ORG-B recibe 404 y R1 sigue sin aprobar"
+    },
+    {
+      "id": "AC-RF12-05",
+      "given": "A-001 y A-002 ENVIADA y el fixture AI-TIMEOUT con una latencia simulada de 5001 ms",
+      "when": "el coordinador pide el resumen",
+      "then": "la respuesta llega a los 5 segundos con origen ALTERNATIVO y un aviso de tiempo agotado, en menos de 6 segundos en total"
+    },
+    {
+      "id": "AC-RF12-06",
+      "given": "el fixture AI-ERROR en el que el proveedor lanza un error",
+      "when": "el coordinador pide el resumen y después reserva A-001",
+      "then": "el resumen responde 200 ALTERNATIVO con aviso y la reserva responde 200 con inventario físico 10, reservado 7"
+    },
+    {
+      "id": "AC-RF12-07",
+      "given": "AI_PROVIDER igual a off y un espía en el proveedor",
+      "when": "el coordinador pide el resumen y luego lista sus solicitudes",
+      "then": "el resumen responde 200 ALTERNATIVO sin llamar al proveedor y el listado responde 200 normalmente"
+    },
+    {
+      "id": "AC-RF12-08",
+      "given": "A-001 ALTA con fecha 2030-01-11T14:00:00Z y A-002 NORMAL con fecha 2030-01-12T14:00:00Z",
+      "when": "se genera dos veces el resumen alternativo con la misma entrada",
+      "then": "las dos salidas son idénticas y recomiendan A-001 antes que A-002 por prioridad ALTA y fecha más próxima"
+    },
+    {
+      "id": "AC-RF12-09",
+      "given": "un fixture cuyo reason pide cambiar la prioridad de A-002 a ALTA",
+      "when": "el coordinador pide y aprueba el resumen",
+      "then": "la prioridad de A-002 sigue NORMAL en la base y en la respuesta, que muestra la prioridad de la solicitud y no la del modelo"
+    },
+    {
+      "id": "AC-RNF06-01",
+      "given": "la API en ejecución con la base viva y luego con la base detenida",
+      "when": "se consultan GET /health y GET /ready en ambos casos",
+      "then": "con la base viva ambos responden 200, y con la base detenida /health responde 200 y /ready responde 503"
+    },
+    {
+      "id": "AC-RNF06-02",
+      "given": "peticiones exitosas y fallidas, entre ellas un login con clave errónea y una con encabezado Authorization",
+      "when": "se revisan los logs estructurados y los encabezados de respuesta",
+      "then": "cada línea de log es JSON con correlationId, el encabezado x-correlation-id se devuelve y ningún log contiene la contraseña, el token ni el valor del encabezado Authorization"
+    },
+    {
+      "id": "AC-RNF06-04",
+      "given": "una petición con el encabezado x-correlation-id igual a un texto con salto de línea y otra con un valor válido de 12 caracteres",
+      "when": "el servidor las atiende y escribe sus logs",
+      "then": "al valor con salto de línea se le asigna un correlationId nuevo generado por el servidor y el valor válido se conserva; cada log sigue siendo una sola línea JSON"
+    },
+    {
+      "id": "AC-RNF06-03",
+      "given": "un entorno sin acceso a internet y con AI_PROVIDER igual a fixture",
+      "when": "se ejecuta la suite completa de pruebas del CI",
+      "then": "todas las pruebas de IA pasan sin credenciales ni servicio de pago"
+    },
+    {
+      "id": "AC-RNF04-01",
+      "given": "un clon limpio del repositorio en un computador con Docker y las versiones documentadas",
+      "when": "se ejecuta el comando documentado de arranque y se cronometra hasta que /ready responde 200 y un login funciona",
+      "then": "el tiempo es de 15 minutos o menos, y el tiempo de descarga inicial de imágenes y paquetes se reporta aparte"
+    },
+    {
+      "id": "AC-RNF04-02",
+      "given": "una base local vacía",
+      "when": "se aplican dos veces las migraciones y el seed",
+      "then": "la segunda ejecución no falla ni duplica datos y los conteos son 2 organizaciones, los SKU sembrados y las 9 cuentas"
+    },
+    {
+      "id": "AC-RNF04-03",
+      "given": "el repositorio en el commit evaluado",
+      "when": "se revisan package-lock.json, la versión de Node y las imágenes de Docker",
+      "then": "las dependencias tienen versión exacta, Node está fijado en .nvmrc y las imágenes usan una etiqueta de versión concreta"
+    }
+  ]
+}

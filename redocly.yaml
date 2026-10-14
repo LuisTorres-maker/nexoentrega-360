@@ -1,0 +1,8 @@
+# Configuracion de Redocly para npx @redocly/cli lint contracts/openapi.yaml
+extends:
+  - recommended
+rules:
+  # La URL de servidor de desarrollo es localhost a proposito (la API corre en el computador).
+  no-server-example.com: off
+  # /health y /ready son publicos y no tienen respuestas 4xx posibles.
+  operation-4xx-response: off

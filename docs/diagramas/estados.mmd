@@ -1,0 +1,11 @@
+stateDiagram-v2
+  [*] --> BORRADOR: crear (solicitante)
+  BORRADOR --> BORRADOR: editar (solicitante dueño)
+  BORRADOR --> ENVIADA: enviar (solicitante dueño)
+  ENVIADA --> RESERVADA: reservar (coordinador, reserved suma)
+  RESERVADA --> DESPACHADA: despachar (bodega, fisico y reserved restan)
+  DESPACHADA --> ENTREGADA: entregar (coordinador)
+  ENVIADA --> CANCELADA: cancelar (solicitante dueño, sin efecto en inventario)
+  RESERVADA --> CANCELADA: cancelar (solicitante dueño, reserved resta)
+  ENTREGADA --> [*]
+  CANCELADA --> [*]

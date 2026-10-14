@@ -1,0 +1,71 @@
+erDiagram
+  ORGANIZATIONS ||--o{ USERS : tiene
+  ORGANIZATIONS ||--o{ REQUESTS : posee
+  ORGANIZATIONS ||--o{ INVENTORY : posee
+  ORGANIZATIONS ||--o{ AUDIT_EVENTS : registra
+  ORGANIZATIONS ||--o{ IDEMPOTENCY_KEYS : acota
+  ORGANIZATIONS ||--o{ AI_SUMMARY_ATTEMPTS : acota
+  USERS ||--o{ SESSIONS : abre
+  USERS ||--o{ REQUESTS : crea
+  USERS ||--o{ AUDIT_EVENTS : ejecuta
+  USERS ||--o{ AI_SUMMARY_ATTEMPTS : pide
+  SKUS ||--o{ INVENTORY : se_guarda_en
+  SKUS ||--o{ REQUEST_LINES : pide
+  REQUESTS ||--|{ REQUEST_LINES : contiene
+  ORGANIZATIONS {
+    text id PK
+    text name
+  }
+  USERS {
+    int id PK
+    text org_id FK
+    text email UK
+    text role
+    text password_hash
+  }
+  SKUS {
+    int id PK
+    text code UK
+    boolean active
+  }
+  INVENTORY {
+    text org_id PK
+    int sku_id PK
+    int on_hand
+    int reserved
+  }
+  REQUESTS {
+    int id PK
+    text code UK
+    text org_id FK
+    int requester_id FK
+    text zone
+    text priority
+    timestamptz required_date
+    text status
+  }
+  REQUEST_LINES {
+    int request_id FK
+    int sku_id FK
+    int quantity
+  }
+  AUDIT_EVENTS {
+    bigint id PK
+    text org_id
+    text resource_type
+    text resource_id
+    text action
+    text correlation_id
+  }
+  IDEMPOTENCY_KEYS {
+    text org_id PK
+    int user_id PK
+    text operation PK
+    text key PK
+    text request_hash
+  }
+  AI_SUMMARY_ATTEMPTS {
+    int id PK
+    text source
+    int approved_by
+  }

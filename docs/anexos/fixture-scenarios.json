@@ -1,0 +1,145 @@
+{
+  "format": "scenario-facts-v1",
+  "clockUtc": "2030-01-10T14:00:00Z",
+  "note": "Reloj fijo para pruebas; en demo use fechas futuras. Estas entidades son hechos del caso, no tablas obligatorias.",
+  "organizations": [
+    "ORG-A",
+    "ORG-B"
+  ],
+  "stock": [
+    {
+      "organizationId": "ORG-A",
+      "sku": "KIT-ALIMENTO",
+      "onHand": 10,
+      "reserved": 0,
+      "active": true
+    },
+    {
+      "organizationId": "ORG-A",
+      "sku": "KIT-HIGIENE",
+      "onHand": 8,
+      "reserved": 0,
+      "active": true
+    },
+    {
+      "organizationId": "ORG-A",
+      "sku": "KIT-AGUA",
+      "onHand": 20,
+      "reserved": 0,
+      "active": true
+    },
+    {
+      "organizationId": "ORG-B",
+      "sku": "KIT-ALIMENTO",
+      "onHand": 4,
+      "reserved": 0,
+      "active": true
+    },
+    {
+      "organizationId": "ORG-B",
+      "sku": "KIT-HIGIENE",
+      "onHand": 5,
+      "reserved": 0,
+      "active": true
+    },
+    {
+      "organizationId": "ORG-B",
+      "sku": "KIT-AGUA",
+      "onHand": 6,
+      "reserved": 0,
+      "active": true
+    }
+  ],
+  "accounts": [
+    {
+      "organizationId": "ORG-A",
+      "role": "SOLICITANTE",
+      "login": "org-a-solicitante@example.test"
+    },
+    {
+      "organizationId": "ORG-A",
+      "role": "COORDINADOR",
+      "login": "org-a-coordinador@example.test"
+    },
+    {
+      "organizationId": "ORG-A",
+      "role": "BODEGA",
+      "login": "org-a-bodega@example.test"
+    },
+    {
+      "organizationId": "ORG-A",
+      "role": "AUDITOR",
+      "login": "org-a-auditor@example.test"
+    },
+    {
+      "organizationId": "ORG-B",
+      "role": "SOLICITANTE",
+      "login": "org-b-solicitante@example.test"
+    },
+    {
+      "organizationId": "ORG-B",
+      "role": "COORDINADOR",
+      "login": "org-b-coordinador@example.test"
+    },
+    {
+      "organizationId": "ORG-B",
+      "role": "BODEGA",
+      "login": "org-b-bodega@example.test"
+    },
+    {
+      "organizationId": "ORG-B",
+      "role": "AUDITOR",
+      "login": "org-b-auditor@example.test"
+    }
+  ],
+  "requests": [
+    {
+      "requestId": "A-001",
+      "organizationId": "ORG-A",
+      "ownerLogin": "org-a-solicitante@example.test",
+      "status": "ENVIADA",
+      "zona": "NORTE",
+      "prioridad": "ALTA",
+      "fechaRequerida": "2030-01-11T14:00:00Z",
+      "observaciones": "Entrega comunitaria programada.",
+      "lines": [
+        {
+          "sku": "KIT-ALIMENTO",
+          "quantity": 7
+        }
+      ]
+    },
+    {
+      "requestId": "A-002",
+      "organizationId": "ORG-A",
+      "ownerLogin": "org-a-solicitante@example.test",
+      "status": "ENVIADA",
+      "zona": "SUR",
+      "prioridad": "NORMAL",
+      "fechaRequerida": "2030-01-12T14:00:00Z",
+      "observaciones": "Solicitud pendiente.",
+      "lines": [
+        {
+          "sku": "KIT-ALIMENTO",
+          "quantity": 7
+        }
+      ]
+    },
+    {
+      "requestId": "B-001",
+      "organizationId": "ORG-B",
+      "ownerLogin": "org-b-solicitante@example.test",
+      "status": "ENVIADA",
+      "zona": "CENTRO",
+      "prioridad": "ALTA",
+      "fechaRequerida": "2030-01-11T15:00:00Z",
+      "observaciones": "Dato exclusivo de ORG-B.",
+      "lines": [
+        {
+          "sku": "KIT-HIGIENE",
+          "quantity": 2
+        }
+      ]
+    }
+  ]
+}

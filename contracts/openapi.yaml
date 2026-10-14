@@ -1,0 +1,1134 @@
+openapi: 3.1.1
+info:
+  title: NexoEntrega 360 API
+  version: 0.1.0
+  summary: Solicitudes de kits, reserva atomica de inventario, auditoria y asistente de IA.
+  description: |
+    API HTTP del monolito de NexoEntrega 360 (RF01 a RF12, RNF01 a RNF06).
+
+    **Orden de controles en cada peticion:** 1) correlationId y log, 2) autenticar (401),
+    3) rol (403), 4) buscar el recurso filtrando por la organizacion de la sesion (404),
+    5) validar la entrada (400 o 422), 6) ejecutar (en transaccion si cambia datos).
+
+    **Aislamiento:** la organizacion y el rol salen de la sesion, nunca del cuerpo ni de encabezados.
+    Un recurso de otra organizacion o de otro solicitante responde 404 (no revela su existencia).
+
+    **Idempotencia (RF07, decision Q5):** la reserva exige `Idempotency-Key`. El alcance de la llave es
+    organizacion, usuario, operacion y llave. Solo se guardan las **respuestas exitosas** y se conservan
+    al menos 24 horas. Los errores 4xx y 5xx **no** se guardan y la operacion se puede reintentar con la
+    misma llave. Misma llave y mismo contenido repite la respuesta (`Idempotent-Replay: true`) sin efectos
+    nuevos. Misma llave con otro contenido responde 409 `LLAVE_CON_OTRO_CONTENIDO`. Pasadas 24 horas la
+    llave se trata como nueva.
+
+    **Identificador publico de solicitud:** su `code` (`A-001`, `SOL-000001`). El id numerico interno no sale.
+  license:
+    name: Uso academico
+    identifier: Unlicense
+servers:
+  - url: http://localhost:3000
+    description: API local (npm run up o npm run dev)
+tags:
+  - name: Sesion
+    description: Inicio y cierre de sesion e identidad de la persona autenticada.
+  - name: Solicitudes
+    description: Crear y editar borradores de solicitud.
+  - name: Transiciones
+    description: Cambios de estado con efectos transaccionales sobre el inventario.
+  - name: Consultas
+    description: Listados paginados, detalle, tablero e inventario.
+  - name: Auditoria
+    description: Historial de solo lectura de quien hizo cada operacion.
+  - name: IA
+    description: Resumen asistido por IA (borrador) y su aprobacion.
+  - name: Operacion
+    description: Salud y disponibilidad del servicio.
+security:
+  - bearerAuth: []
+paths:
+  /auth/login:
+    post:
+      tags: [Sesion]
+      operationId: login
+      summary: Iniciar sesion
+      description: |
+        Devuelve un token opaco (se muestra una sola vez). El servidor guarda solo su hash SHA-256 con
+        vencimiento de 8 horas. El mismo 401 sirve para cuenta inexistente y clave erronea.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+            example:
+              email: org-a-coordinador@example.test
+              password: <clave-de-demostracion>
+      responses:
+        '200':
+          description: Sesion creada
+          headers:
+            x-correlation-id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '400':
+          $ref: '#/components/responses/JsonInvalido'
+        '401':
+          description: Credenciales invalidas
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: CREDENCIALES_INVALIDAS
+                mensaje: Correo o contrasena incorrectos.
+                campo: null
+                correlationId: 7f1c1a52-0a7c-4d52-a3c2-3f6a1c1d0001
+        '422':
+          $ref: '#/components/responses/Validacion'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+  /auth/logout:
+    post:
+      tags: [Sesion]
+      operationId: logout
+      summary: Cerrar sesion
+      description: Borra la sesion. El mismo token deja de servir (401).
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: Sesion cerrada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+  /me:
+    get:
+      tags: [Sesion]
+      operationId: getMe
+      summary: Identidad de la sesion
+      description: Devuelve la persona, su rol y su organizacion. Nunca incluye hashes ni el token.
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: Datos de la sesion
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Me'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+  /requests:
+    post:
+      tags: [Solicitudes]
+      operationId: createRequest
+      summary: Crear un borrador
+      description: Solo SOLICITANTE. La organizacion y el solicitante salen de la sesion. Crear un borrador no se audita.
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RequestInput'
+            example:
+              zone: NORTE
+              priority: ALTA
+              requiredDate: '2030-01-20T14:00:00Z'
+              notes: Entrega comunitaria programada.
+              lines:
+                - sku: KIT-AGUA
+                  quantity: 2
+      responses:
+        '201':
+          description: Borrador creado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RequestDetail'
+        '400':
+          $ref: '#/components/responses/JsonInvalido'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/Prohibido'
+        '422':
+          $ref: '#/components/responses/Validacion'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+    get:
+      tags: [Consultas]
+      operationId: listRequests
+      summary: Listar solicitudes
+      description: |
+        Todos los roles. El SOLICITANTE ve solo las suyas; los demas roles ven las de su organizacion,
+        en cualquier estado (supuesto Q10). Orden: fecha de creacion descendente.
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: pageSize
+          in: query
+          description: De 1 a 100. Mas de 100 responde 422 (Q7).
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/Status'
+        - name: priority
+          in: query
+          schema:
+            $ref: '#/components/schemas/Priority'
+        - name: zone
+          in: query
+          schema:
+            $ref: '#/components/schemas/Zone'
+      responses:
+        '200':
+          description: Pagina de solicitudes
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RequestPage'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '422':
+          $ref: '#/components/responses/Validacion'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+  /requests/{code}:
+    parameters:
+      - $ref: '#/components/parameters/Code'
+      - $ref: '#/components/parameters/CorrelationId'
+    get:
+      tags: [Consultas]
+      operationId: getRequest
+      summary: Detalle de una solicitud
+      description: 404 si no existe, es de otra organizacion o (para SOLICITANTE) es de otro solicitante.
+      responses:
+        '200':
+          description: Detalle con lineas
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RequestDetail'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '404':
+          $ref: '#/components/responses/NoEncontrada'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+    patch:
+      tags: [Solicitudes]
+      operationId: updateRequest
+      summary: Editar un borrador
+      description: Solo SOLICITANTE dueno y solo si el estado es BORRADOR (si no, 409). Reemplaza los datos y las lineas.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RequestInput'
+      responses:
+        '200':
+          description: Borrador actualizado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RequestDetail'
+        '400':
+          $ref: '#/components/responses/JsonInvalido'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/Prohibido'
+        '404':
+          $ref: '#/components/responses/NoEncontrada'
+        '409':
+          $ref: '#/components/responses/EstadoInvalido'
+        '422':
+          $ref: '#/components/responses/Validacion'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+  /requests/{code}/submit:
+    post:
+      tags: [Transiciones]
+      operationId: submitRequest
+      summary: Enviar (BORRADOR a ENVIADA)
+      description: |
+        Solo SOLICITANTE dueno. Revalida SKU activos, lineas y que la fecha requerida no sea anterior al
+        momento de envio. No cambia inventario. Registra un evento ENVIAR.
+      parameters:
+        - $ref: '#/components/parameters/Code'
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: Solicitud enviada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RequestDetail'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/Prohibido'
+        '404':
+          $ref: '#/components/responses/NoEncontrada'
+        '409':
+          $ref: '#/components/responses/EstadoInvalido'
+        '422':
+          $ref: '#/components/responses/Validacion'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+  /requests/{code}/reserve:
+    post:
+      tags: [Transiciones]
+      operationId: reserveRequest
+      summary: Reservar (ENVIADA a RESERVADA)
+      description: |
+        Solo COORDINADOR. Reserva todas las lineas o ninguna, en una transaccion, con bloqueo de la
+        solicitud y un UPDATE condicional por linea en orden fijo de SKU. Exige `Idempotency-Key`.
+      parameters:
+        - $ref: '#/components/parameters/Code'
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Solicitud reservada (o respuesta guardada si es una repeticion)
+          headers:
+            Idempotent-Replay:
+              description: '`true` cuando es la repeticion de una reserva ya exitosa con la misma llave y contenido.'
+              schema:
+                type: string
+                enum: ['true']
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RequestDetail'
+              example:
+                code: A-001
+                zone: NORTE
+                priority: ALTA
+                requiredDate: '2030-01-11T14:00:00Z'
+                notes: Entrega comunitaria programada.
+                status: RESERVADA
+                lines:
+                  - sku: KIT-ALIMENTO
+                    quantity: 7
+                createdAt: '2030-01-10T10:00:00Z'
+                updatedAt: '2030-01-10T14:00:00Z'
+        '400':
+          description: Falta el encabezado Idempotency-Key o esta vacio
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: LLAVE_REQUERIDA
+                mensaje: Falta el encabezado Idempotency-Key.
+                campo: Idempotency-Key
+                correlationId: 7f1c1a52-0a7c-4d52-a3c2-3f6a1c1d0002
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/Prohibido'
+        '404':
+          $ref: '#/components/responses/NoEncontrada'
+        '409':
+          description: Estado no permitido, stock insuficiente o llave reutilizada con otro contenido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                stock:
+                  summary: Una linea sin disponible (no se guarda la llave)
+                  value:
+                    error: STOCK_INSUFICIENTE
+                    mensaje: No hay disponible suficiente de KIT-ALIMENTO.
+                    campo: lines.0
+                    correlationId: 7f1c1a52-0a7c-4d52-a3c2-3f6a1c1d0003
+                estado:
+                  summary: La solicitud ya no esta ENVIADA
+                  value:
+                    error: ESTADO_INVALIDO
+                    mensaje: La solicitud no esta en estado ENVIADA.
+                    campo: null
+                    correlationId: 7f1c1a52-0a7c-4d52-a3c2-3f6a1c1d0004
+                llave:
+                  summary: Misma llave con contenido distinto
+                  value:
+                    error: LLAVE_CON_OTRO_CONTENIDO
+                    mensaje: La llave ya se uso con otra solicitud.
+                    campo: Idempotency-Key
+                    correlationId: 7f1c1a52-0a7c-4d52-a3c2-3f6a1c1d0005
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+  /requests/{code}/dispatch:
+    post:
+      tags: [Transiciones]
+      operationId: dispatchRequest
+      summary: Despachar (RESERVADA a DESPACHADA)
+      description: Solo BODEGA. Baja la existencia fisica y lo reservado en las cantidades de la solicitud.
+      parameters:
+        - $ref: '#/components/parameters/Code'
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: Solicitud despachada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RequestDetail'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/Prohibido'
+        '404':
+          $ref: '#/components/responses/NoEncontrada'
+        '409':
+          $ref: '#/components/responses/EstadoInvalido'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+  /requests/{code}/deliver:
+    post:
+      tags: [Transiciones]
+      operationId: deliverRequest
+      summary: Entregar (DESPACHADA a ENTREGADA)
+      description: Solo COORDINADOR. No cambia inventario.
+      parameters:
+        - $ref: '#/components/parameters/Code'
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: Solicitud entregada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RequestDetail'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/Prohibido'
+        '404':
+          $ref: '#/components/responses/NoEncontrada'
+        '409':
+          $ref: '#/components/responses/EstadoInvalido'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+  /requests/{code}/cancel:
+    post:
+      tags: [Transiciones]
+      operationId: cancelRequest
+      summary: Cancelar (ENVIADA o RESERVADA a CANCELADA)
+      description: |
+        Solo SOLICITANTE dueno. Cancelar una RESERVADA libera exactamente su reserva (la existencia
+        fisica no cambia). Cancelar una ENVIADA no cambia inventario.
+      parameters:
+        - $ref: '#/components/parameters/Code'
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: Solicitud cancelada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RequestDetail'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/Prohibido'
+        '404':
+          $ref: '#/components/responses/NoEncontrada'
+        '409':
+          $ref: '#/components/responses/EstadoInvalido'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+  /dashboard:
+    get:
+      tags: [Consultas]
+      operationId: getDashboard
+      summary: Tablero
+      description: |
+        Cantidades de solicitudes por estado (propias para SOLICITANTE; de la organizacion para los
+        demas). COORDINADOR, BODEGA y AUDITOR reciben ademas el inventario con fisico, reservado y disponible.
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: Tablero
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Dashboard'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+  /inventory:
+    get:
+      tags: [Consultas]
+      operationId: getInventory
+      summary: Inventario de la organizacion
+      description: COORDINADOR, BODEGA y AUDITOR. No incluye SKU inactivos sin existencias. SOLICITANTE recibe 403.
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: Inventario
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/InventoryItem'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/Prohibido'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+  /audit:
+    get:
+      tags: [Auditoria]
+      operationId: listAudit
+      summary: Eventos de auditoria
+      description: |
+        COORDINADOR y AUDITOR de su organizacion (BODEGA y SOLICITANTE reciben 403). Solo lectura:
+        no existen rutas para modificar o borrar eventos.
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: pageSize
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: Pagina de eventos, del mas reciente al mas antiguo
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditPage'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/Prohibido'
+        '422':
+          $ref: '#/components/responses/Validacion'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+  /ai/summaries:
+    post:
+      tags: [IA]
+      operationId: createAiSummary
+      summary: Pedir un resumen asistido por IA
+      description: |
+        Solo COORDINADOR. Hasta 20 codigos de solicitudes ENVIADA de su organizacion. Si alguno es
+        ajeno o no existe responde 404 y si alguno no esta ENVIADA responde 409, **antes** de llamar al
+        proveedor. El adaptador recibe unicamente requestId, zona, prioridad, fechaRequerida, estado y
+        observaciones. La salida del proveedor es texto no confiable: se valida con
+        `contracts/ai-output.schema.json` y en codigo. Si es invalida, hay timeout (5 s) o falla el
+        proveedor, la respuesta es un resumen determinista alternativo con un aviso controlado.
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AiSummaryRequest'
+            example:
+              requestIds: [A-001, A-002]
+      responses:
+        '200':
+          description: Borrador de resumen (marcado como asistencia de IA)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AiSummary'
+        '400':
+          $ref: '#/components/responses/JsonInvalido'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/Prohibido'
+        '404':
+          $ref: '#/components/responses/NoEncontrada'
+        '409':
+          $ref: '#/components/responses/EstadoInvalido'
+        '422':
+          $ref: '#/components/responses/Validacion'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+  /ai/summaries/{id}/approve:
+    post:
+      tags: [IA]
+      operationId: approveAiSummary
+      summary: Aprobar un resumen
+      description: |
+        Solo COORDINADOR de la organizacion, una vez por resumen (la segunda responde 409
+        RESUMEN_YA_APROBADO). Deja un evento APROBAR_RESUMEN. No reserva, despacha ni cambia estados,
+        prioridad o inventario.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: Resumen aprobado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AiApproval'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/Prohibido'
+        '404':
+          $ref: '#/components/responses/NoEncontrada'
+        '409':
+          description: El resumen ya fue aprobado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: RESUMEN_YA_APROBADO
+                mensaje: Este resumen ya fue aprobado.
+                campo: null
+                correlationId: 7f1c1a52-0a7c-4d52-a3c2-3f6a1c1d0006
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+  /health:
+    get:
+      tags: [Operacion]
+      operationId: health
+      summary: Proceso vivo
+      description: Siempre 200 si el proceso responde. No consulta la base.
+      security: []
+      responses:
+        '200':
+          description: Vivo
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [status]
+                properties:
+                  status:
+                    type: string
+                    enum: [ok]
+  /ready:
+    get:
+      tags: [Operacion]
+      operationId: ready
+      summary: Listo para recibir trafico
+      description: Comprueba que la base responde. 503 si no.
+      security: []
+      responses:
+        '200':
+          description: Listo
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [status]
+                properties:
+                  status:
+                    type: string
+                    enum: [ready]
+        '503':
+          description: La base de datos no responde
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [status, razon]
+                properties:
+                  status:
+                    type: string
+                    enum: [no-listo]
+                  razon:
+                    type: string
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: Token opaco devuelto por `/auth/login`. Se guarda en el servidor solo como hash SHA-256.
+  parameters:
+    Code:
+      name: code
+      in: path
+      required: true
+      description: Codigo publico de la solicitud (por ejemplo A-001 o SOL-000001).
+      schema:
+        type: string
+        pattern: '^[A-Z]+-[0-9]+$'
+        examples: [A-001]
+    CorrelationId:
+      name: x-correlation-id
+      in: header
+      required: false
+      description: Identificador opcional de la peticion. Si falta, el servidor lo genera y lo devuelve en el mismo encabezado.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 64
+        pattern: '^[A-Za-z0-9._-]+$'
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: Obligatoria en la reserva. Entre 1 y 128 caracteres. Alcance organizacion, usuario, operacion y llave.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+  headers:
+    CorrelationId:
+      description: Identificador de la peticion (el recibido o uno generado).
+      schema:
+        type: string
+  responses:
+    NoAutenticado:
+      description: Sin sesion, vencida, cerrada o inventada
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: NO_AUTENTICADO
+            mensaje: Debe iniciar sesion.
+            campo: null
+            correlationId: 7f1c1a52-0a7c-4d52-a3c2-3f6a1c1d0010
+    Prohibido:
+      description: El rol no puede ejecutar la operacion sobre un recurso de su organizacion
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: PROHIBIDO
+            mensaje: Su rol no permite esta operacion.
+            campo: null
+            correlationId: 7f1c1a52-0a7c-4d52-a3c2-3f6a1c1d0011
+    NoEncontrada:
+      description: El recurso no existe o es de otra organizacion o de otro solicitante (mismo cuerpo)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: NO_ENCONTRADA
+            mensaje: No se encontro el recurso.
+            campo: null
+            correlationId: 7f1c1a52-0a7c-4d52-a3c2-3f6a1c1d0012
+    EstadoInvalido:
+      description: La transicion no esta permitida desde el estado actual. No cambia datos ni inventario.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: ESTADO_INVALIDO
+            mensaje: La solicitud no esta en un estado que permita esta operacion.
+            campo: null
+            correlationId: 7f1c1a52-0a7c-4d52-a3c2-3f6a1c1d0013
+    JsonInvalido:
+      description: El cuerpo no es JSON interpretable
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: JSON_INVALIDO
+            mensaje: El cuerpo de la peticion no es JSON valido.
+            campo: null
+            correlationId: 7f1c1a52-0a7c-4d52-a3c2-3f6a1c1d0014
+    Validacion:
+      description: Datos invalidos (cantidad fuera de rango, SKU repetido, inactivo o inexistente, campo extra, etc.)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: VALIDACION
+            mensaje: La cantidad debe ser un entero entre 1 y 500.
+            campo: lines.0.quantity
+            correlationId: 7f1c1a52-0a7c-4d52-a3c2-3f6a1c1d0015
+    ErrorInterno:
+      description: Error inesperado. La transaccion se deshace y no se guarda la llave de idempotencia.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: ERROR_INTERNO
+            mensaje: Ocurrio un error inesperado. Intente de nuevo.
+            campo: null
+            correlationId: 7f1c1a52-0a7c-4d52-a3c2-3f6a1c1d0016
+  schemas:
+    Error:
+      type: object
+      additionalProperties: false
+      required: [error, mensaje, campo, correlationId]
+      properties:
+        error:
+          type: string
+          description: Codigo en mayusculas.
+          enum:
+            - NO_AUTENTICADO
+            - CREDENCIALES_INVALIDAS
+            - PROHIBIDO
+            - NO_ENCONTRADA
+            - VALIDACION
+            - JSON_INVALIDO
+            - ESTADO_INVALIDO
+            - STOCK_INSUFICIENTE
+            - LLAVE_REQUERIDA
+            - LLAVE_CON_OTRO_CONTENIDO
+            - RESUMEN_YA_APROBADO
+            - ERROR_INTERNO
+        mensaje:
+          type: string
+          description: Texto en espanol, sin trazas ni datos de otra organizacion.
+        campo:
+          type: [string, 'null']
+          description: Ruta del campo invalido (por ejemplo lines.0.quantity) o null.
+        correlationId:
+          type: string
+    Ok:
+      type: object
+      additionalProperties: false
+      required: [ok]
+      properties:
+        ok:
+          type: boolean
+    LoginRequest:
+      type: object
+      additionalProperties: false
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          minLength: 1
+        password:
+          type: string
+          minLength: 1
+          writeOnly: true
+    LoginResponse:
+      type: object
+      additionalProperties: false
+      required: [token, user]
+      properties:
+        token:
+          type: string
+          description: Token opaco de 32 bytes en hexadecimal. Se devuelve una sola vez.
+        user:
+          type: object
+          additionalProperties: false
+          required: [id, role, orgId]
+          properties:
+            id:
+              type: integer
+            role:
+              $ref: '#/components/schemas/Role'
+            orgId:
+              type: string
+              examples: [ORG-A]
+    Me:
+      type: object
+      additionalProperties: false
+      required: [id, email, displayName, role, orgId]
+      properties:
+        id:
+          type: integer
+        email:
+          type: string
+        displayName:
+          type: string
+        role:
+          $ref: '#/components/schemas/Role'
+        orgId:
+          type: string
+    Role:
+      type: string
+      enum: [SOLICITANTE, COORDINADOR, BODEGA, AUDITOR]
+    Zone:
+      type: string
+      enum: [NORTE, CENTRO, SUR, ORIENTE, OCCIDENTE]
+    Priority:
+      type: string
+      enum: [NORMAL, ALTA]
+    Status:
+      type: string
+      enum: [BORRADOR, ENVIADA, RESERVADA, DESPACHADA, ENTREGADA, CANCELADA]
+    RequestLineInput:
+      type: object
+      additionalProperties: false
+      required: [sku, quantity]
+      properties:
+        sku:
+          type: string
+          description: Codigo de un SKU activo (por ejemplo KIT-AGUA).
+        quantity:
+          type: integer
+          minimum: 1
+          maximum: 500
+    RequestInput:
+      type: object
+      additionalProperties: false
+      description: Cuerpo estricto. No se aceptan campos extra (status, code, orgId, requesterId...).
+      required: [zone, priority, requiredDate, lines]
+      properties:
+        zone:
+          $ref: '#/components/schemas/Zone'
+        priority:
+          $ref: '#/components/schemas/Priority'
+        requiredDate:
+          type: string
+          format: date-time
+          description: ISO 8601 en UTC. Al enviar no puede ser anterior al momento de envio.
+        notes:
+          type: string
+          maxLength: 500
+        lines:
+          type: array
+          minItems: 1
+          maxItems: 10
+          description: SKU sin repetir.
+          items:
+            $ref: '#/components/schemas/RequestLineInput'
+    RequestDetail:
+      type: object
+      additionalProperties: false
+      required: [code, zone, priority, requiredDate, status, lines, createdAt, updatedAt]
+      properties:
+        code:
+          type: string
+          examples: [A-001]
+        zone:
+          $ref: '#/components/schemas/Zone'
+        priority:
+          $ref: '#/components/schemas/Priority'
+        requiredDate:
+          type: string
+          format: date-time
+        notes:
+          type: [string, 'null']
+        status:
+          $ref: '#/components/schemas/Status'
+        requesterName:
+          type: string
+          description: Nombre visible del solicitante (no se envia al adaptador de IA).
+        lines:
+          type: array
+          items:
+            $ref: '#/components/schemas/RequestLineInput'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    RequestSummary:
+      type: object
+      additionalProperties: false
+      required: [code, zone, priority, status, requiredDate]
+      properties:
+        code:
+          type: string
+        zone:
+          $ref: '#/components/schemas/Zone'
+        priority:
+          $ref: '#/components/schemas/Priority'
+        status:
+          $ref: '#/components/schemas/Status'
+        requiredDate:
+          type: string
+          format: date-time
+    RequestPage:
+      type: object
+      additionalProperties: false
+      required: [page, pageSize, total, items]
+      properties:
+        page:
+          type: integer
+        pageSize:
+          type: integer
+        total:
+          type: integer
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/RequestSummary'
+    InventoryItem:
+      type: object
+      additionalProperties: false
+      required: [sku, name, onHand, reserved, available]
+      properties:
+        sku:
+          type: string
+        name:
+          type: string
+        onHand:
+          type: integer
+          minimum: 0
+        reserved:
+          type: integer
+          minimum: 0
+        available:
+          type: integer
+          minimum: 0
+          description: Existencia fisica menos reservado.
+    Dashboard:
+      type: object
+      additionalProperties: false
+      required: [byStatus]
+      properties:
+        byStatus:
+          type: object
+          description: Cantidad de solicitudes por estado (todos los estados, con 0 si no hay).
+          additionalProperties:
+            type: integer
+            minimum: 0
+          propertyNames:
+            $ref: '#/components/schemas/Status'
+        inventory:
+          type: array
+          description: Solo para COORDINADOR, BODEGA y AUDITOR.
+          items:
+            $ref: '#/components/schemas/InventoryItem'
+    AuditEvent:
+      type: object
+      additionalProperties: false
+      required: [id, occurredAt, userId, orgId, resourceType, resourceId, action, correlationId]
+      properties:
+        id:
+          type: integer
+        occurredAt:
+          type: string
+          format: date-time
+          description: Fecha en UTC.
+        userId:
+          type: integer
+        orgId:
+          type: string
+        resourceType:
+          type: string
+          enum: [REQUEST, AI_SUMMARY]
+        resourceId:
+          type: string
+        action:
+          type: string
+          enum: [ENVIAR, RESERVAR, CANCELAR, DESPACHAR, ENTREGAR, APROBAR_RESUMEN]
+        fromStatus:
+          type: [string, 'null']
+        toStatus:
+          type: [string, 'null']
+        correlationId:
+          type: string
+    AuditPage:
+      type: object
+      additionalProperties: false
+      required: [page, pageSize, total, items]
+      properties:
+        page:
+          type: integer
+        pageSize:
+          type: integer
+        total:
+          type: integer
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuditEvent'
+    AiSummaryRequest:
+      type: object
+      additionalProperties: false
+      required: [requestIds]
+      properties:
+        requestIds:
+          type: array
+          minItems: 1
+          maxItems: 20
+          uniqueItems: true
+          items:
+            type: string
+    AiSummary:
+      type: object
+      additionalProperties: false
+      required: [id, origen, generadoConIA, estado, aviso, resultado]
+      properties:
+        id:
+          type: integer
+          description: Identificador del intento guardado (se usa para aprobar).
+        origen:
+          type: string
+          enum: [PROVEEDOR, ALTERNATIVO]
+        generadoConIA:
+          type: boolean
+          description: false cuando es el resumen determinista alternativo.
+        estado:
+          type: string
+          enum: [BORRADOR]
+        aviso:
+          type: [string, 'null']
+          description: Mensaje controlado cuando se uso el alternativo.
+        resultado:
+          $ref: './ai-output.schema.json'
+    AiApproval:
+      type: object
+      additionalProperties: false
+      required: [id, aprobadoPor, aprobadoEn]
+      properties:
+        id:
+          type: integer
+        aprobadoPor:
+          type: integer
+        aprobadoEn:
+          type: string
+          format: date-time

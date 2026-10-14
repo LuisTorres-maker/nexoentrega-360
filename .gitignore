@@ -1,0 +1,16 @@
+node_modules/
+dist/
+build/
+coverage/
+.venv/
+__pycache__/
+.env
+.env.*
+!.env.example
+# Archivos de intercambio locales (no se versionan)
+entregas/
+# Resultados locales
+playwright-report/
+test-results/
+*.log
+.DS_Store

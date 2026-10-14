@@ -1,0 +1,7 @@
+flowchart LR
+  U1[Solicitante] --> N(NexoEntrega 360)
+  U2[Coordinador] --> N
+  U3[Bodega] --> N
+  U4[Auditor] --> N
+  N -. resumen opcional, solo campos autorizados .-> IA[Proveedor de IA externo]
+  N --> DB[(PostgreSQL)]

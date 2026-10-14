@@ -1,0 +1,16 @@
+sequenceDiagram
+  participant Co as Coordinador
+  participant API
+  participant DB as PostgreSQL
+  participant P as Proveedor de IA
+  Co->>API: POST /ai/summaries (hasta 20 codigos ENVIADA)
+  API->>API: autenticar, rol COORDINADOR, organizacion y estado (404 y 409 antes de llamar)
+  API->>API: armar solo requestId, zona, prioridad, fechaRequerida, estado y observaciones
+  API->>P: summarize(campos, timeout 5 s)
+  P--xAPI: timeout, error o JSON invalido
+  API->>API: validar esquema cerrado y pertenencia y usar el resumen determinista alternativo
+  API->>DB: guardar intento (origen ALTERNATIVO, motivo, correlationId)
+  API-->>Co: 200 borrador marcado como asistencia de IA, origen alternativo y aviso
+  Co->>API: POST /ai/summaries/ID/approve
+  API->>DB: marcar aprobado, evento APROBAR_RESUMEN (sin tocar inventario ni estados)
+  API-->>Co: 200 aprobado
