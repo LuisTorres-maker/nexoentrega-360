@@ -37,7 +37,14 @@ try {
     const ssl = await client.query('SELECT ssl FROM pg_stat_ssl WHERE pid = pg_backend_pid()');
     console.log('Conexion: OK');
     console.log(`Version de PostgreSQL: ${v.rows[0].server_version}`);
-    console.log(`Conexion cifrada (SSL): ${ssl.rows[0]?.ssl ? 'si' : 'no'}`);
+    // Del lado del cliente: si el socket es TLS, la conexion hasta el servidor (o el pooler) va cifrada.
+    const clienteTls = client.connection?.stream?.encrypted === true;
+    console.log(`Conexion cifrada (SSL): ${clienteTls ? 'si' : 'no'}`);
+    if (clienteTls && !ssl.rows[0]?.ssl) {
+      console.log(
+        '  (el salto interno del pooler hacia PostgreSQL no se reporta como SSL; es normal)',
+      );
+    }
     if (SOLO_CONEXION) process.exit(0);
 
     const tablas = await client.query(
