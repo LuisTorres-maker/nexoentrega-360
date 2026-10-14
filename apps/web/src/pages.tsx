@@ -103,12 +103,18 @@ function TablaInventario({ items }: { items: NonNullable<Tablero['inventory']> }
       <h2 id="titulo-inventario">Inventario</h2>
       <ul className="rejilla">
         {items.map((i) => (
-          <li key={i.sku} className="tarjeta">
-            <strong>{i.sku}</strong>
-            <span>{i.name}</span>
-            <span>Físico: {i.onHand}</span>
-            <span>Reservado: {i.reserved}</span>
-            <span>Disponible: {i.available}</span>
+          <li key={i.sku} className="tarjeta inventario-item">
+            <strong>{i.name}</strong>
+            <span className="sku">{i.sku}</span>
+            <span className="inv-linea">
+              Físico: <b>{i.onHand}</b>
+            </span>
+            <span className="inv-linea">
+              Reservado: <b>{i.reserved}</b>
+            </span>
+            <span className="inv-linea inv-disponible">
+              Disponible: <b>{i.available}</b>
+            </span>
           </li>
         ))}
       </ul>

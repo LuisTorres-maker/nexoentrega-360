@@ -1,0 +1,5 @@
+# Fin de linea LF en el repositorio y en el arbol de trabajo (los scripts .sh y .mjs deben ser LF).
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.ico binary

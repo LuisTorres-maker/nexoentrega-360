@@ -117,6 +117,26 @@ nav a.active {
   border-radius: 8px;
   padding: 1rem;
 }
+.inventario-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.inventario-item .sku {
+  color: var(--texto-suave, #5a6472);
+  font-size: 0.85rem;
+  margin-bottom: 0.5rem;
+}
+.inv-linea {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.inv-disponible {
+  border-top: 1px solid var(--borde);
+  padding-top: 0.25rem;
+  font-weight: 600;
+}
 .estrecha {
   max-width: 26rem;
   margin: 2rem auto;
