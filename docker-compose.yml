@@ -1,0 +1,20 @@
+# Base de pruebas local (R0). Los servicios db, api y web se agregan en R7.
+# Uso:  npm run db:test:up   (o: docker compose --profile test up -d --wait db-test)
+services:
+  db-test:
+    image: postgres:16.4
+    profiles: ['test']
+    environment:
+      POSTGRES_USER: nexo
+      POSTGRES_PASSWORD: test
+      POSTGRES_DB: nexo_test
+    ports:
+      - '54329:5432'
+    # Datos solo en memoria: las pruebas vacian las tablas en cada ejecucion.
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U nexo -d nexo_test']
+      interval: 3s
+      timeout: 3s
+      retries: 20

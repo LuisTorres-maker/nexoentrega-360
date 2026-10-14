@@ -1,0 +1,64 @@
+name: CI
+
+# R0: flujo minimo. Se amplia en rondas posteriores (contrato OpenAPI, build de la web,
+# auditoria de dependencias, deteccion de secretos y E2E sobre tags).
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  verificar:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16.4
+        env:
+          POSTGRES_USER: nexo
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: nexo_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U nexo -d nexo_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # Solo base local del service container. El CI no usa credenciales de Supabase.
+      TEST_DATABASE_URL: postgresql://nexo:test@localhost:5432/nexo_test
+    steps:
+      - uses: actions/checkout@v7
+
+      # La comprobacion de SPECS va justo despues del checkout y nunca despues de exportar.
+      # R0: el exportador falla si no hay ninguna spec.md, por eso el paso es condicional.
+      # Desde R1 se vuelve obligatorio (se quita el if).
+      - name: SPECS (el JSON coincide con la fuente)
+        run: |
+          if ls specs/*/spec.md >/dev/null 2>&1; then
+            python3 scripts/export_specs.py --check
+          else
+            echo "R0: todavia no hay specs/*/spec.md; paso omitido"
+          fi
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: DATABASE_URL="$TEST_DATABASE_URL" npm run migrate
+      - run: npm run test
+
+      # R0: se omite mientras no exista evidence/traceability.csv. Desde R1 es obligatorio.
+      - name: Trazabilidad
+        run: |
+          if [ -f evidence/traceability.csv ]; then
+            python3 scripts/check_trace.py --fase R1
+          else
+            echo "R0: todavia no existe evidence/traceability.csv; paso omitido"
+          fi

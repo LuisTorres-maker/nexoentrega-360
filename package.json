@@ -1,0 +1,46 @@
+{
+  "name": "nexoentrega-360",
+  "version": "0.0.0",
+  "private": true,
+  "description": "NexoEntrega 360: solicitudes, reserva atomica de inventario y auditoria para dos organizaciones comunitarias.",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "workspaces": [
+    "apps/api",
+    "apps/web"
+  ],
+  "scripts": {
+    "verify": "npm run lint && npm run typecheck && npm run test",
+    "lint": "eslint . && npm run format:check",
+    "format": "prettier --write \"*.{json,mjs}\" \"apps/**/*.{ts,mts,tsx,json}\" \"tests/**/*.ts\" \"scripts/**/*.mjs\"",
+    "format:check": "prettier --check \"*.{json,mjs}\" \"apps/**/*.{ts,mts,tsx,json}\" \"tests/**/*.ts\" \"scripts/**/*.mjs\"",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "build": "npm run build --workspaces --if-present",
+    "db:check": "node scripts/db-check.mjs",
+    "db:test:up": "node scripts/db-test.mjs up",
+    "db:test:down": "node scripts/db-test.mjs down",
+    "migrate": "node scripts/migrate.mjs",
+    "seed": "node scripts/seed.mjs",
+    "seed:gen": "node scripts/stub.mjs seed:gen R2",
+    "up": "node scripts/stub.mjs up R7",
+    "down": "node scripts/stub.mjs down R7",
+    "e2e": "node scripts/stub.mjs e2e R6",
+    "load": "node scripts/stub.mjs load R7",
+    "specs": "node scripts/py.mjs scripts/export_specs.py",
+    "specs:check": "node scripts/py.mjs scripts/export_specs.py --check",
+    "trace:check": "node scripts/py.mjs scripts/check_trace.py"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "24.19.2",
+    "eslint": "10.12.0",
+    "globals": "17.13.0",
+    "prettier": "3.9.10",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.71.2",
+    "vitest": "5.0.4"
+  }
+}
