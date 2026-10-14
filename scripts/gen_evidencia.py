@@ -124,10 +124,10 @@ def main():
             filas.append({
                 "SpecAndVersion": f"{spec['id']} v{spec['version']}", "Story": spec["story"]["id"], "RF": req,
                 "AC": ac["id"], "ExpectedBehavior": ac["then"], "CodePath": CODIGO[req],
-                "PR": PR_PLAN[req] + " (planificado)",
+                "PR": PR_PLAN[req] + " (plan abandonado: commit directo a main)",
                 "Test": " || ".join(f"{t[0]}::{t[1]}" for t in ts) if ts else "—",
                 "ObservedResult": obs, "Status": estado, "DefectOrDifference": dif,
-                "Correction": "—", "EvidenceSHA": a.sha if a.sha else "—",
+                "Correction": ("No aplica (sin defecto)" if estado == "Cumple" else "Pendiente: cerrar el gap indicado en DefectOrDifference"), "EvidenceSHA": a.sha if a.sha else "—",
             })
             por_req.setdefault(req, []).append((ac["id"], estado, [t[0] for t in ts]))
     with open(RAIZ / "evidence" / "spec-vs-code.csv", "w", encoding="utf-8-sig", newline="") as f:
@@ -148,7 +148,7 @@ def main():
         archivos = sorted({p for x in acs for p in x[2]})
         r["CodePath"] = CODIGO[k]
         r["TestID"] = "; ".join(archivos) if archivos else "—"
-        r["PR"] = PR_PLAN[k] + " (planificado)"
+        r["PR"] = PR_PLAN[k] + " (plan abandonado: commit directo a main)"
         if total and len(cumple) == total:
             r["Status"] = "Cumple"
             r["Evidence"] = f"{total} de {total} AC con prueba aprobada sobre {a.sha[:7] if a.sha else 'SHA'}; evidence/spec-vs-code.csv"
