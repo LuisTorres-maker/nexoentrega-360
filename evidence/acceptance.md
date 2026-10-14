@@ -1,16 +1,17 @@
-# Aceptación de la entrega (BORRADOR)
+# Aceptación de la entrega
 
-Estado: **borrador de la ronda R7.** La versión final y la decisión de entregar las completa el equipo en R8, sobre el SHA de `release-examen`.
-Ningún dato de esta página es una aprobación humana: los campos de personas están en `PENDIENTE`.
+Estado: **versión de la ronda R8, sobre el SHA `a7a9ba8` (código) y `5b34fa0` (evidencia).** Los campos de personas siguen en `PENDIENTE`: ninguna aprobación humana se inventó.
 
-## Tag, SHA y fecha
+## Etiquetas, SHA y fecha
 
 | Dato | Valor |
 |---|---|
-| Etiqueta `baseline-v1` | PENDIENTE (Luis) |
+| Etiqueta `baseline-v1` | PENDIENTE (Luis): la etiqueta no existe en el repositorio al 2026-10-14T16:28Z |
 | Etiqueta `release-examen` | PENDIENTE (Carlos B) |
+| SHA del código evaluado | `a7a9ba8d716a7a75adac4b262afbdcbae012707a` |
+| SHA de la evidencia (solo documentos y script de evidencia) | `5b34fa0` |
 | SHA final | PENDIENTE (`git rev-parse release-examen^{commit}`) |
-| Fecha UTC | PENDIENTE |
+| Fecha UTC de las pruebas | 2026-10-14 |
 
 ## Equipo e integrantes
 
@@ -19,42 +20,47 @@ Carlos C (calidad y pruebas), Carlos B (IA y entrega). Repositorio: <https://git
 
 ## Alcance implementado
 
-| Requisito | Estado (árbol de trabajo, falta SHA) | Evidencia |
+| Requisito | Estado sobre `a7a9ba8` | Evidencia |
 |---|---|---|
-| RF01 a RF09 (identidad, aislamiento, solicitudes, transiciones, reserva atómica, idempotencia, consultas y auditoría) | `Parcial`: las pruebas pasaron en el árbol de trabajo | `evidence/spec-vs-code.csv` |
-| RF10 a RF12 (asistente de IA) | `Parcial`: 7 fixtures y aprobación única; **sin respuesta real de un LLM** | `tests/integration/ai.test.ts`, `evidence/ai-real/` |
-| RNF01, RNF02 | `Parcial` | Pruebas de seguridad y concurrencia |
-| RNF03 | `Parcial`: p95 41,5 ms, 0 % de errores en esta máquina | `evidence/tests/carga.md` |
-| RNF04 | `Parcial`: migraciones y seed dos veces, versiones fijas, Docker Compose; **sin clon limpio en otro computador** | `evidence/tests/clon-limpio.md` |
-| RNF05 | `Parcial`: automático 4 de 4; **verificación manual pendiente** | `evidence/tests/rnf05-checklist.md` |
-| RNF06 | `Parcial` | `tests/integration/ai.test.ts` |
+| RF01 a RF09 (identidad, aislamiento, solicitudes, transiciones, reserva atómica, idempotencia, consultas y auditoría) | `Cumple` en la mayoría de sus AC; `Parcial` en AC-RF01-07, AC-RF03-03, AC-RF03-04, AC-RF03-07, AC-RF07-04 y AC-RF09-03 | `evidence/spec-vs-code.csv` |
+| RF10 a RF12 (asistente de IA) | `Cumple` en los AC con prueba; **sin respuesta real de un LLM** (`evidence/ai-real/respuesta.json` no existe) | `tests/integration/ai.test.ts`, `evidence/ai-real/` |
+| RNF01, RNF02 | `Cumple` | Pruebas de seguridad y concurrencia |
+| RNF03 | `Parcial` (AC-RNF03-02); carga: p95 41,5 ms y 0 % de errores en una máquina | `evidence/tests/carga.md` |
+| RNF04 | `No cumple` en AC-RNF04-01 (clon limpio sin ejecutar); `Cumple` en AC-RNF04-02 y AC-RNF04-03 | `evidence/tests/clon-limpio.md` |
+| RNF05 | Automático 4 de 4; **verificación manual pendiente** | `evidence/tests/rnf05-checklist.md` |
+| RNF06 | `Cumple` en los AC con prueba | `tests/integration/ai.test.ts` |
 
-## Evidencia de aceptación
+Totales de los 126 AC: **118 `Cumple`, 7 `Parcial`, 1 `No cumple`.**
 
-`npm run verify` (159 pruebas), `npm run e2e` (7 pruebas), `npm run load`, `npm audit`, `gitleaks`, respaldo y restauración. Todo sobre el árbol de trabajo.
+## Evidencia de aceptación (reales)
+
+| Comprobación | Resultado |
+|---|---|
+| `npm run verify` (Vitest, base PostgreSQL real) | 159 de 159 |
+| `npm run e2e` (Playwright, Chromium) | 7 de 7 |
+| `npm run load` (k6, 20 usuarios, 60 s) | CUMPLE (p95 41,5 ms; 0 % de errores) |
+| `npm audit --audit-level=high` | 0 vulnerabilidades |
+| `gitleaks` | Sin hallazgos |
+| CI de GitHub sobre `main` (`evidence/github/runs.json`) | `verificar` y `secretos` en `success` para `2365711`, `212c4d4`, `a7a9ba8` y `5b34fa0`; `e2e` omitido (solo en etiquetas) |
+| Contrato OpenAPI | Válido; 19 de 19 rutas coinciden con Express |
 
 ## Convergencia (spec, contrato, tareas, código y pruebas)
 
-| Aspecto | Verificación |
-|---|---|
-| Contrato contra rutas de Express | `tests/unit/contract.test.ts` (19 operaciones) |
-| Contrato válido | `npx @redocly/cli lint contracts/openapi.yaml` |
-| SPEC contra código | `evidence/spec-vs-code.csv` (126 AC) |
-| Trazabilidad | `python3 scripts/check_trace.py --fase R1` (18 requisitos) |
-| Tareas | `docs/tasks.md` (T-01 a T-37) |
+Ver `evidence/convergence.md`.
 
 ## Gaps y límites (abiertos)
 
 | Gap | Impacto |
 |---|---|
-| G1, G2 y G3 sin evidencia en Git (PR sin unir, actas sin completar) | Cadena SPEC → código → prueba no respaldada |
-| Pruebas sobre el árbol de trabajo y no sobre un SHA unido | Ningún AC puede ser `Cumple` |
+| Sin PR revisados por otra persona: todo entró a `main` en un commit directo de Luis (R4-H20) | La rúbrica puntúa revisión real; no hay evidencia de ella |
+| Actas G1 a G4, bitácora de IA y revisiones con campos `PENDIENTE (persona)` | Falta la evidencia humana |
 | Respuesta real de un LLM no capturada | RF11: «salida real declarada» pendiente |
-| Clon limpio en otro computador | RNF04 sin cronometrar |
-| Verificación manual de RNF05 | RNF05 parcial |
-| Sesión adversarial no ejecutada | Revisión crítica humana pendiente |
-| Sin límite de intentos de login | Fuera de alcance (SPEC-001 S2) |
+| Clon limpio en otro computador | AC-RNF04-01 `No cumple` |
+| Verificación manual de RNF05 y sesión adversarial | RNF05 parcial; revisión crítica humana pendiente |
+| Sin límite de intentos de login ni cabeceras HTTP extra | Fuera de alcance (SPEC-001 S2); riesgo aceptado |
+| Lista fija de SKU en la interfaz | Si cambia el catálogo hay que cambiar la web |
 | Q1 a Q10 sin respuesta del docente | Supuestos provisionales |
+| Etiquetas `baseline-v1` y `release-examen` | No creadas |
 
 ## Decisión de entregar
 
@@ -66,4 +72,4 @@ PENDIENTE (persona revisora distinta del autor principal).
 
 ## Contribución por integrante
 
-PENDIENTE: se construye en R8 con datos reales de GitHub (`gh pr list`), no con estimaciones.
+Ver `evidence/participation.csv`. Construida solo con datos reales de GitHub (`evidence/github/`): 0 PR y 5 commits en `main`; lo demás figura `PENDIENTE`.

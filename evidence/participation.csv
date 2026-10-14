@@ -1,0 +1,7 @@
+Person,GitHubUser,Contribution,Artifact,PR,ReviewOfOther,Evidence
+Luis,LuisTorres-maker,"Producto y especificaciones; operador de Claude Code; publicó el repositorio completo (4 commits en main el 2026-10-14) y corrigió defectos de la interfaz y de los scripts","Todo el repositorio (170 archivos); commits 2365711, 212c4d4, a7a9ba8 y 5b34fa0",Ninguno (commit directo a main; ver R4-H20),PENDIENTE,"git log origin/main; evidence/github/runs.json (CI en verde)"
+Andrés,AndresFelipeVerona,PENDIENTE,PENDIENTE,Ninguno,PENDIENTE,"Sin commits ni PR en el repositorio al 2026-10-14T16:28Z"
+Jhoimer,jhprogramacion17-source,PENDIENTE,PENDIENTE,Ninguno,PENDIENTE,"Sin commits ni PR en el repositorio al 2026-10-14T16:28Z"
+Said,Sagte28,PENDIENTE,PENDIENTE,Ninguno,PENDIENTE,"Sin commits ni PR en el repositorio al 2026-10-14T16:28Z"
+Carlos C,castleChuck-debug,PENDIENTE,PENDIENTE,Ninguno,PENDIENTE,"Sin commits ni PR en el repositorio al 2026-10-14T16:28Z"
+Carlos B,carloss01abr-collab,PENDIENTE,PENDIENTE,Ninguno,PENDIENTE,"Sin commits ni PR en el repositorio al 2026-10-14T16:28Z"

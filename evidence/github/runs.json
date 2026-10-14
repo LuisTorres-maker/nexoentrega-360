@@ -1,0 +1,47 @@
+[
+  {
+    "databaseId": 38597623634,
+    "headSha": "5b34fa099ea1d352601dd08933eaf06268637ac3",
+    "event": "push",
+    "conclusion": "success",
+    "workflowName": "CI",
+    "createdAt": "2026-10-14T16:23:07Z",
+    "url": "https://github.com/LuisTorres-maker/nexoentrega-360/actions/runs/38597623634"
+  },
+  {
+    "databaseId": 38597003107,
+    "headSha": "a7a9ba8d716a7a75adac4b262afbdcbae012707a",
+    "event": "push",
+    "conclusion": "success",
+    "workflowName": "CI",
+    "createdAt": "2026-10-14T16:18:48Z",
+    "url": "https://github.com/LuisTorres-maker/nexoentrega-360/actions/runs/38597003107"
+  },
+  {
+    "databaseId": 38594953974,
+    "headSha": "212c4d42dbca8f4dd854b5504a45e3a1d4e14790",
+    "event": "push",
+    "conclusion": "success",
+    "workflowName": "CI",
+    "createdAt": "2026-10-14T16:04:39Z",
+    "url": "https://github.com/LuisTorres-maker/nexoentrega-360/actions/runs/38594953974"
+  },
+  {
+    "databaseId": 38590137391,
+    "headSha": "2365711888172fdc07dd1f4137e227f7f63a1a9b",
+    "event": "push",
+    "conclusion": "success",
+    "workflowName": "CI",
+    "createdAt": "2026-10-14T15:31:52Z",
+    "url": "https://github.com/LuisTorres-maker/nexoentrega-360/actions/runs/38590137391"
+  },
+  {
+    "databaseId": 38590134826,
+    "headSha": "2365711888172fdc07dd1f4137e227f7f63a1a9b",
+    "event": "push",
+    "conclusion": "success",
+    "workflowName": "CI",
+    "createdAt": "2026-10-14T15:31:51Z",
+    "url": "https://github.com/LuisTorres-maker/nexoentrega-360/actions/runs/38590134826"
+  }
+]
