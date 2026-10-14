@@ -124,10 +124,53 @@ function TablaInventario({ items }: { items: NonNullable<Tablero['inventory']> }
 
 // ---- solicitante: mis solicitudes ---------------------------------------------------------------
 
+/** Botones Anterior y Siguiente para listas con muchas filas (la API pagina de 1 a 100). */
+function Paginador({
+  pagina,
+  total,
+  porPagina,
+  onCambio,
+}: {
+  pagina: number;
+  total: number;
+  porPagina: number;
+  onCambio: (p: number) => void;
+}) {
+  const totalPaginas = Math.max(1, Math.ceil(total / porPagina));
+  if (totalPaginas <= 1) return null;
+  return (
+    <nav className="acciones" aria-label="Paginación">
+      <button
+        type="button"
+        className="secundario"
+        disabled={pagina <= 1}
+        onClick={() => onCambio(pagina - 1)}
+      >
+        Anterior
+      </button>
+      <span>
+        Página {pagina} de {totalPaginas} ({total} solicitudes)
+      </span>
+      <button
+        type="button"
+        className="secundario"
+        disabled={pagina >= totalPaginas}
+        onClick={() => onCambio(pagina + 1)}
+      >
+        Siguiente
+      </button>
+    </nav>
+  );
+}
+
+const POR_PAGINA = 20;
+
 export function MisSolicitudes() {
+  const [pagina, setPagina] = useState(1);
   const lista = useCarga(
-    () => llamar<Pagina<Resumen>>('/requests', { consulta: { pageSize: 50 } }),
-    [],
+    () =>
+      llamar<Pagina<Resumen>>('/requests', { consulta: { page: pagina, pageSize: POR_PAGINA } }),
+    [pagina],
   );
   const { ocupado, error, ejecutar } = useAccion();
 
@@ -187,6 +230,14 @@ export function MisSolicitudes() {
           </li>
         ))}
       </ul>
+      {lista.datos && (
+        <Paginador
+          pagina={pagina}
+          total={lista.datos.total}
+          porPagina={POR_PAGINA}
+          onCambio={setPagina}
+        />
+      )}
     </main>
   );
 }
@@ -390,12 +441,19 @@ export function Bandeja() {
   const [estado, setEstado] = useState('');
   const [prioridad, setPrioridad] = useState('');
   const [zona, setZona] = useState('');
+  const [pagina, setPagina] = useState(1);
   const lista = useCarga(
     () =>
       llamar<Pagina<Resumen>>('/requests', {
-        consulta: { pageSize: 100, status: estado, priority: prioridad, zone: zona },
+        consulta: {
+          page: pagina,
+          pageSize: POR_PAGINA,
+          status: estado,
+          priority: prioridad,
+          zone: zona,
+        },
       }),
-    [estado, prioridad, zona],
+    [estado, prioridad, zona, pagina],
   );
   const { ocupado, error, ejecutar } = useAccion();
   const [marcadas, setMarcadas] = useState<string[]>([]);
@@ -442,7 +500,14 @@ export function Bandeja() {
       <div className="filtros">
         <div>
           <label htmlFor="f-estado">Estado</label>
-          <select id="f-estado" value={estado} onChange={(e) => setEstado(e.target.value)}>
+          <select
+            id="f-estado"
+            value={estado}
+            onChange={(e) => {
+              setEstado(e.target.value);
+              setPagina(1);
+            }}
+          >
             <option value="">Todos</option>
             {['BORRADOR', 'ENVIADA', 'RESERVADA', 'DESPACHADA', 'ENTREGADA', 'CANCELADA'].map(
               (x) => (
@@ -453,7 +518,14 @@ export function Bandeja() {
         </div>
         <div>
           <label htmlFor="f-prioridad">Prioridad</label>
-          <select id="f-prioridad" value={prioridad} onChange={(e) => setPrioridad(e.target.value)}>
+          <select
+            id="f-prioridad"
+            value={prioridad}
+            onChange={(e) => {
+              setPrioridad(e.target.value);
+              setPagina(1);
+            }}
+          >
             <option value="">Todas</option>
             <option>NORMAL</option>
             <option>ALTA</option>
@@ -461,7 +533,14 @@ export function Bandeja() {
         </div>
         <div>
           <label htmlFor="f-zona">Zona</label>
-          <select id="f-zona" value={zona} onChange={(e) => setZona(e.target.value)}>
+          <select
+            id="f-zona"
+            value={zona}
+            onChange={(e) => {
+              setZona(e.target.value);
+              setPagina(1);
+            }}
+          >
             <option value="">Todas</option>
             {ZONAS.map((z) => (
               <option key={z}>{z}</option>
@@ -510,6 +589,14 @@ export function Bandeja() {
           </li>
         ))}
       </ul>
+      {lista.datos && (
+        <Paginador
+          pagina={pagina}
+          total={lista.datos.total}
+          porPagina={POR_PAGINA}
+          onCambio={setPagina}
+        />
+      )}
 
       <section className="tarjeta" aria-labelledby="titulo-ia">
         <h2 id="titulo-ia">Asistente de IA</h2>

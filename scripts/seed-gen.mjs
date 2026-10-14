@@ -261,7 +261,10 @@ let difieren = 0;
 for (const [ruta, contenido] of Object.entries(archivos)) {
   const destino = join(RAIZ, ruta);
   if (SOLO_COMPROBAR) {
-    const actual = existsSync(destino) ? readFileSync(destino, 'utf8') : null;
+    // Un clon en Windows con core.autocrlf puede traer CRLF: el contenido es el mismo.
+    const actual = existsSync(destino)
+      ? readFileSync(destino, 'utf8').replaceAll('\r\n', '\n')
+      : null;
     if (actual !== contenido) {
       console.error(`DIFIERE: ${ruta} (ejecute: npm run seed:gen)`);
       difieren++;

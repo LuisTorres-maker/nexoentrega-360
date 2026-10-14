@@ -82,6 +82,8 @@ npm run db:test:up        # base local de pruebas (puerto 54329)
 npm run verify            # formato + lint + tipos + 159 pruebas con base real
 npm run up && npm run e2e # E2E con Playwright (reinicia los datos de la base de Docker)
 npm run load              # k6: 20 usuarios, 60 s, 2.000 solicitudes; escribe evidence/tests/carga.md
+
+> **Después de `npm run load` o `npm run e2e`**, la base local queda con datos de prueba (las 2.000 solicitudes `L-…` tienen fecha 2030 y tapan en la lista a las nuevas). Antes de una demostración vuelva al estado inicial: `docker compose exec -T db psql -U nexo -d nexo < seeds/000_reset_demo.sql` (solo base local; nunca contra Supabase sin intención).
 ```
 
 ## 7. Qué hacer cuando falla la IA
