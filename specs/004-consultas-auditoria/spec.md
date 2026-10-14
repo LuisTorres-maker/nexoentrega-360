@@ -1,0 +1,157 @@
+# SPEC-004 Consultas y auditoría
+
+Autor: PENDIENTE (Jhoimer). Revisor: PENDIENTE (Andrés). Fecha UTC: PENDIENTE (Jhoimer). Commit: PENDIENTE (Jhoimer).
+
+## Propósito y actores
+
+Que coordinador, bodega y auditor listen, filtren y vean el tablero de su organización, y puedan saber quién hizo qué.
+El solicitante ve solo sus solicitudes. Actores: los cuatro roles.
+
+## Alcance y exclusiones
+
+Incluye: listado paginado con filtros, detalle, tablero (por estado y disponible/reservado), inventario, consulta de auditoría,
+registro de eventos por transición y rendimiento de las consultas (RNF03).
+No incluye: edición o borrado del historial, exportaciones, búsqueda por texto, reportes por fechas.
+
+## Requisitos de referencia
+
+RF08, RF09 y RNF03.
+
+## Historia de usuario y reglas
+
+HU-04. Como coordinador, bodega o auditor quiero listar, filtrar, ver el tablero y consultar quién hizo qué.
+
+Paginación y filtros: `page` (≥ 1, por defecto 1), `pageSize` (1 a 100, por defecto 20; más de 100 responde 422, Q7),
+`status`, `priority` y `zone` con valores de las enumeraciones (si no, 422). Respuesta `{ page, pageSize, total, items }`,
+orden por fecha de creación descendente.
+
+Evento de auditoría (RF09): identidad, organización, recurso, acción, estado anterior y nuevo, fecha UTC y `correlationId`.
+Acciones: ENVIAR, RESERVAR, CANCELAR, DESPACHAR, ENTREGAR y APROBAR_RESUMEN (esta última, de SPEC-005).
+
+## Entradas, proceso, salidas y casos límite
+
+El bloque estructurado es la fuente vinculante.
+
+<!-- spec-data:start -->
+```json
+{
+  "id": "SPEC-004",
+  "version": "0.2",
+  "name": "Consultas y auditoría",
+  "story": {
+    "id": "HU-04",
+    "as": "coordinador, encargado de bodega o auditor de una organización",
+    "want": "listar y filtrar solicitudes, ver el tablero con cantidades y consultar quién hizo cada operación",
+    "soThat": "pueda gestionar el trabajo pendiente y demostrar la trazabilidad de cada cambio"
+  },
+  "requirements": ["RF08", "RF09", "RNF03"],
+  "description": "Listados paginados con filtros, tablero por estado con inventario disponible y reservado, consulta de auditoría de solo lectura y desempeño de las consultas bajo carga.",
+  "inputs": [
+    { "field": "page", "type": "entero", "validation": ["mayor o igual a 1", "por defecto 1"] },
+    { "field": "pageSize", "type": "entero", "validation": ["de 1 a 100", "por defecto 20", "mayor que 100 responde 422"] },
+    { "field": "status", "type": "enumeración opcional", "validation": ["BORRADOR, ENVIADA, RESERVADA, DESPACHADA, ENTREGADA o CANCELADA"] },
+    { "field": "priority", "type": "enumeración opcional", "validation": ["NORMAL o ALTA"] },
+    { "field": "zone", "type": "enumeración opcional", "validation": ["NORTE, CENTRO, SUR, ORIENTE u OCCIDENTE"] },
+    { "field": "code (ruta)", "type": "identificador", "validation": ["pertenece a la organización de la sesión y, para SOLICITANTE, a su propiedad"] }
+  ],
+  "process": [
+    "Autenticar y comprobar el rol permitido para la consulta (403 si no)",
+    "Validar page, pageSize y filtros contra listas cerradas (422 con el campo inválido)",
+    "Construir la consulta con parámetros y con la organización de la sesión; para SOLICITANTE agregar su identificador como dueño",
+    "Contar el total y devolver la página ordenada por fecha de creación descendente y desempate por identificador",
+    "Tablero: contar solicitudes por estado de la organización (o propias) y, para COORDINADOR, BODEGA y AUDITOR, agregar inventario con físico, reservado y disponible",
+    "Auditoría: devolver los eventos de la organización paginados y ordenados por fecha descendente; no existe ninguna ruta que modifique o borre eventos",
+    "Cada transición exitosa inserta su evento en la misma transacción del cambio; las operaciones rechazadas solo escriben un log técnico"
+  ],
+  "outputs": [
+    { "condition": "consulta válida", "result": "200 con page, pageSize, total e items de la organización de la sesión" },
+    { "condition": "pageSize mayor que 100, page menor que 1 o filtro con valor desconocido", "result": "422 VALIDACION con el campo inválido" },
+    { "condition": "recurso inexistente o de otra organización", "result": "404 NO_ENCONTRADA" },
+    { "condition": "rol sin permiso sobre inventario o auditoría", "result": "403 PROHIBIDO" },
+    { "condition": "transición exitosa", "result": "un evento de auditoría persistido junto al cambio" },
+    { "condition": "intento de modificar o borrar un evento", "result": "404 o 405 en la API y error de la base por el disparador" }
+  ],
+  "businessRules": [
+    "Todo listado, tablero y auditoría se filtra por la organización de la sesión",
+    "Un SOLICITANTE solo ve sus solicitudes y no consulta inventario ni auditoría",
+    "COORDINADOR, BODEGA y AUDITOR ven todas las solicitudes de su organización en cualquier estado, incluidos los borradores",
+    "COORDINADOR y AUDITOR consultan la auditoría de su organización; BODEGA y SOLICITANTE reciben 403",
+    "COORDINADOR, BODEGA y AUDITOR consultan el inventario; SOLICITANTE recibe 403",
+    "Disponible se calcula como existencia física menos reservado y los SKU inactivos no se listan en el tablero",
+    "El historial es de solo escritura: ni la API ni la base permiten actualizar o borrar eventos",
+    "Crear o editar un borrador no genera evento; solo las transiciones y las aprobaciones de resumen",
+    "El evento de una transición tiene como recurso la solicitud (tipo REQUEST y su code); el de una aprobación de resumen tiene tipo AI_SUMMARY, el identificador del resumen y estados vacíos",
+    "Nombres de columnas dinámicas salen de listas cerradas del código, nunca del usuario",
+    "Códigos de error: VALIDACION, PROHIBIDO, NO_ENCONTRADA"
+  ],
+  "edgeCases": [
+    "pageSize igual a 100 (permitido) y a 101 (rechazado)",
+    "Página mayor que el total de páginas (items vacío, total correcto)",
+    "Filtros combinados que no devuelven resultados",
+    "Organización sin solicitudes",
+    "Valores de filtro en minúsculas",
+    "Dos eventos con la misma fecha (el orden usa el identificador)",
+    "Solicitudes con 2.000 filas sembradas en ORG-A"
+  ],
+  "acceptanceCriteria": [
+    { "id": "AC-RF08-01", "given": "el coordinador de ORG-A autenticado y las solicitudes sembradas A-001, A-002, A-003 y A-004 de ORG-A y B-001 de ORG-B", "when": "envía GET /requests sin parámetros", "then": "responde 200 con page 1, pageSize 20, total 4 y 4 elementos, todos de ORG-A, ordenados por fecha de creación descendente" },
+    { "id": "AC-RF08-02", "given": "el coordinador de ORG-A con 4 solicitudes visibles", "when": "envía GET /requests con pageSize 1 y page 2", "then": "responde 200 con 1 elemento, total 4, page 2 y pageSize 1, y un elemento distinto al de la página 1" },
+    { "id": "AC-RF08-03", "given": "el coordinador de ORG-A autenticado", "when": "envía GET /requests con pageSize 100, con pageSize 101, con pageSize 0 y con page 0", "then": "pageSize 100 responde 200 y las otras tres responden 422 VALIDACION con el campo pageSize o page" },
+    { "id": "AC-RF08-04", "given": "ORG-A con A-001 ENVIADA ALTA NORTE, A-002 ENVIADA NORMAL SUR, A-003 BORRADOR y A-004 CANCELADA", "when": "el coordinador filtra por status ENVIADA, por priority ALTA, por zone SUR y por la combinación status ENVIADA con priority NORMAL y zone SUR", "then": "obtiene respectivamente A-001 y A-002, solo A-001, solo A-002, y solo A-002" },
+    { "id": "AC-RF08-05", "given": "el coordinador de ORG-A autenticado", "when": "filtra por status ABIERTA, por zone ESTE y por priority urgente", "then": "las tres respuestas son 422 VALIDACION con el campo del filtro inválido" },
+    { "id": "AC-RF08-06", "given": "org-a-solicitante@example.test dueño de A-001 a A-004 y org-a-solicitante2@example.test sin solicitudes", "when": "cada uno envía GET /requests", "then": "el primero obtiene total 4 con sus solicitudes y el segundo obtiene total 0 e items vacío" },
+    { "id": "AC-RF08-07", "given": "el seed base en ORG-A con 2 ENVIADA, 1 BORRADOR y 1 CANCELADA y KIT-ALIMENTO físico 10, reservado 0", "when": "el coordinador envía GET /dashboard", "then": "responde 200 con cantidades por estado BORRADOR 1, ENVIADA 2, CANCELADA 1 y 0 en las demás, e inventario con KIT-ALIMENTO físico 10, reservado 0, disponible 10, sin datos de ORG-B" },
+    { "id": "AC-RF08-08", "given": "A-001 reservada por el coordinador de ORG-A", "when": "el coordinador envía GET /dashboard", "then": "ENVIADA es 1 y RESERVADA es 1, y KIT-ALIMENTO muestra físico 10, reservado 7, disponible 3" },
+    { "id": "AC-RF08-09", "given": "org-a-solicitante@example.test autenticado", "when": "envía GET /dashboard y GET /inventory", "then": "el tablero devuelve solo las cantidades por estado de sus 4 solicitudes sin inventario, y GET /inventory responde 403 PROHIBIDO" },
+    { "id": "AC-RF08-10", "given": "bodega de ORG-A autenticada y el SKU inactivo KIT-INACTIVO", "when": "envía GET /inventory", "then": "responde 200 con KIT-ALIMENTO, KIT-HIGIENE y KIT-AGUA de ORG-A, cada uno con físico, reservado y disponible igual a físico menos reservado, y sin KIT-INACTIVO" },
+    { "id": "AC-RF08-11", "given": "el coordinador de ORG-A autenticado", "when": "envía GET /requests/A-001, GET /requests/A-999 que no existe y GET /requests/B-001", "then": "el primero responde 200 con sus líneas y estado, y los otros dos responden 404 NO_ENCONTRADA con el mismo cuerpo" },
+    { "id": "AC-RF09-01", "given": "el coordinador de ORG-A reserva A-001 enviando el encabezado x-correlation-id igual a corr-0001", "when": "el auditor de ORG-A envía GET /audit", "then": "aparece un evento con el identificador del coordinador, organización ORG-A, recurso A-001, acción RESERVAR, de ENVIADA a RESERVADA, fecha en UTC y correlationId corr-0001" },
+    { "id": "AC-RF09-02", "given": "el estado y la cantidad de eventos de ORG-A antes de la prueba", "when": "se ejecutan operaciones rechazadas, una reserva con 409 por stock, una con 403 por rol, una con 404 por organización y un envío con 422", "then": "la cantidad de eventos de auditoría no cambia y cada rechazo deja un log técnico con su correlationId" },
+    { "id": "AC-RF09-03", "given": "un evento de auditoría existente y el auditor de ORG-A autenticado", "when": "envía PUT, PATCH y DELETE sobre /audit y sobre un evento, y se ejecuta un UPDATE y un DELETE directo sobre la tabla de eventos", "then": "la API responde 404 o 405 y la base rechaza ambas sentencias por el disparador de solo escritura" },
+    { "id": "AC-RF09-04", "given": "ORG-A con eventos de transiciones de A-001 y A-002 y ORG-B con un evento de B-001", "when": "el coordinador, el auditor, bodega y el solicitante de ORG-A envían GET /audit", "then": "coordinador y auditor reciben 200 solo con eventos de ORG-A paginados y por fecha descendente, y bodega y solicitante reciben 403 PROHIBIDO" },
+    { "id": "AC-RF09-05", "given": "una reserva de A-001 en la que se inyecta un fallo al insertar el evento de auditoría", "when": "el coordinador la reserva", "then": "la transacción se deshace: A-001 sigue ENVIADA, el inventario sigue físico 10 y reservado 0 y no queda ningún evento" },
+    { "id": "AC-RF09-06", "given": "el solicitante de ORG-A autenticado", "when": "crea un borrador y lo edita", "then": "no se inserta ningún evento de auditoría porque crear y editar un borrador no son transiciones" },
+    { "id": "AC-RNF03-01", "given": "2000 solicitudes sembradas con el seed de carga en la base local de Docker, 20 usuarios virtuales y 5 segundos de calentamiento", "when": "durante 60 segundos se consultan listados con filtros y el tablero, sin invocar la IA", "then": "el percentil 95 del tiempo de respuesta es menor o igual a 700 ms y los errores son menores al 1 por ciento, con hardware y versión de la herramienta reportados" },
+    { "id": "AC-RNF03-02", "given": "el seed base ya cargado y el seed de carga aplicado aparte", "when": "se cuentan las solicitudes y se consultan los oráculos de inventario", "then": "hay 2000 solicitudes adicionales y los datos sembrados del caso, entre ellos KIT-ALIMENTO de ORG-A con físico 10 y reservado 0, no cambian" }
+  ]
+}
+```
+<!-- spec-data:end -->
+
+## Datos y contrato esperado
+
+| Método | Ruta | Quién | Éxito | Errores |
+|---|---|---|---|---|
+| GET | `/requests` | Todos los roles | 200 `{ page, pageSize, total, items }` | 401, 422 |
+| GET | `/requests/{code}` | Todos los roles | 200 detalle con líneas | 401, 404 |
+| GET | `/dashboard` | Todos los roles | 200 `{ byStatus, inventory? }` | 401 |
+| GET | `/inventory` | COORDINADOR, BODEGA, AUDITOR | 200 lista de SKU con físico, reservado y disponible | 401, 403 |
+| GET | `/audit` | COORDINADOR, AUDITOR | 200 `{ page, pageSize, total, items }` | 401, 403, 422 |
+
+Elemento de auditoría: `{ id, occurredAt, userId, orgId, resourceType, resourceId, action, fromStatus, toStatus, correlationId }`.
+
+## Supuestos y preguntas
+
+| ID | Supuesto o pregunta | Estado |
+|---|---|---|
+| Q7 | `pageSize` mayor que 100 responde 422 (no se recorta). | Abierta, con supuesto provisional |
+| Q10 | ¿Los roles de organización ven los borradores de otros solicitantes? Se asume que sí, porque el enunciado dice consultar las solicitudes de su organización. | Abierta, con supuesto provisional |
+| S1 | COORDINADOR consulta `/audit`; BODEGA y SOLICITANTE no. | Supuesto del equipo |
+| S2 | Crear o editar un borrador no se audita (no es una transición). | Supuesto del equipo |
+| S3 | Orden por fecha de creación descendente; en auditoría, por fecha del evento descendente. | Supuesto del equipo |
+
+## Riesgos y pruebas previstas
+
+| Riesgo | Control | Prueba prevista |
+|---|---|---|
+| Fuga entre organizaciones en listados | Filtro por organización en cada consulta | `tests/integration/queries.test.ts` y SPEC-001 |
+| Consultas lentas con 2.000 solicitudes | Índices por organización y estado y paginación obligatoria | k6, AC-RNF03-01 |
+| Historial editable | Disparador en la base y ausencia de rutas | AC-RF09-03 |
+| Evento sin cambio o cambio sin evento | Misma transacción | AC-RF09-05 |
+
+## Cambios de versión
+
+| Versión | Fecha UTC | Cambio |
+|---|---|---|
+| 0.1 | PENDIENTE (Jhoimer) | Borrador inicial generado con Claude Code. |
+| 0.2 | PENDIENTE (Jhoimer) | Revisión crítica IA-02: se define el recurso del evento APROBAR_RESUMEN, que RF09 exige y la SPEC no precisaba (H-07); se registra la pregunta Q10 sobre la visibilidad de borradores (H-11). |

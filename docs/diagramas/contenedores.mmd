@@ -1,0 +1,18 @@
+flowchart LR
+  subgraph NAV[Frontera 1: navegador, no confiable]
+    W[Aplicacion web React]
+  end
+  subgraph SRV[Frontera 2: servidor propio, confiable]
+    A[API Node y Express: rutas, servicios, dominio]
+    AD[Adaptador de IA: fixture, replay, http u off]
+    DBL[(PostgreSQL 16.4 local en Docker: pruebas y arranque reproducible)]
+    DBS[(PostgreSQL alojado en Supabase: demostracion del equipo)]
+  end
+  subgraph EXT[Frontera 3: proveedor de IA, no confiable]
+    P[Proveedor externo o respuesta capturada]
+  end
+  W -- HTTP + sesion Bearer --> A
+  A -- SQL parametrizado con transacciones --> DBL
+  A -. misma API, otra DATABASE_URL .-> DBS
+  A --> AD
+  AD -- 6 campos autorizados, timeout 5 s --> P

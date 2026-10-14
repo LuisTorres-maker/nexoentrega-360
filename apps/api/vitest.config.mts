@@ -7,5 +7,8 @@ export default defineConfig({
     include: ['../../tests/unit/**/*.test.ts', '../../tests/integration/**/*.test.ts'],
     fileParallelism: false,
     environment: 'node',
+    // Hilos en lugar de procesos: en Windows el pool 'forks' llego a morir al arrancar
+    // (codigo 3221226505) de forma intermitente, sin relacion con las pruebas.
+    pool: 'threads',
   },
 });

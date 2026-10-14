@@ -1,6 +1,6 @@
 # Preguntas y decisiones del cliente
 
-Versión: v0.1 (borrador de la ronda R0)
+Versión: v0.2 (v0.1 de R0; se agregó Q10 en la revisión crítica de R1)
 Responsable de enviar las preguntas al docente: Luis.
 
 Una respuesta de IA es una propuesta; no es decisión del cliente. Mientras el docente no responda,
@@ -21,6 +21,7 @@ Los campos `Fecha` y `Respuesta y autoridad` los completa una persona con datos 
 | Q7 | PENDIENTE (Luis) | RF08 | Si piden más de 100 elementos por página, ¿se recorta o se rechaza? | Respuestas pesadas o ambiguas | 422 si `pageSize` > 100 | PENDIENTE (Luis) | `pageSize` mayor que 100 responde 422 | Validación de consultas, contrato OpenAPI, AC de SPEC-004 | Abierta |
 | Q8 | PENDIENTE (Luis) | RF03, RF05 | ¿Qué pasa si una línea usa un SKU inactivo, inexistente o sin inventario cargado en la organización? | Reservas con datos rotos | SKU inactivo o inexistente: 422. SKU sin fila de inventario: se trata como 0 y la reserva da 409 | PENDIENTE (Luis) | Inactivo o inexistente responde 422; sin fila de inventario cuenta como 0 y la reserva responde 409 | Validación al enviar, servicio de reserva, AC de SPEC-002 y SPEC-003 | Abierta |
 | Q9 | PENDIENTE (Luis) | RF12 | ¿Se puede aprobar varias veces el mismo resumen de IA? | Auditoría duplicada | No: una aprobación por intento; la segunda da 409 | PENDIENTE (Luis) | Una sola aprobación por intento; la segunda responde 409 | Servicio de aprobación, auditoría, AC de SPEC-005 | Abierta |
+| Q10 | PENDIENTE (Luis) | RF08 | ¿Los roles de la organización (coordinador, bodega, auditor) ven también los borradores de otros solicitantes en listados y tablero? (hallazgo H-11 de la revisión crítica IA-02) | Exponer trabajo no enviado, o impedir que el auditor vea todo | Sí: ven todos los estados de su organización, como dice el enunciado ("solicitudes de su organización"). El solicitante solo ve las suyas | PENDIENTE (Luis) | Coordinador, bodega y auditor ven todas las solicitudes de su organización en cualquier estado, incluido BORRADOR | Filtros de listado y tablero, AC-RF08-01, AC-RF08-04 y AC-RF08-07 de SPEC-004 | Abierta |
 
 ## Decisiones de cobertura del enunciado (no son preguntas al docente)
 

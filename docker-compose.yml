@@ -1,6 +1,63 @@
-# Base de pruebas local (R0). Los servicios db, api y web se agregan en R7.
-# Uso:  npm run db:test:up   (o: docker compose --profile test up -d --wait db-test)
+# Servicios de NexoEntrega 360.
+#   npm run up      -> levanta db, api y web con base LOCAL (no necesita Supabase ni credenciales)
+#   npm run down    -> los apaga
+#   npm run db:test:up -> solo la base de pruebas (perfil test, puerto 54329)
+# Interfaz web en http://localhost:8080 (nginx, con /api reenviado a la API).
 services:
+  db:
+    image: postgres:16.4
+    environment:
+      POSTGRES_USER: nexo
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-nexo_demo}
+      POSTGRES_DB: nexo
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U nexo -d nexo']
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    environment:
+      DATABASE_URL: postgresql://nexo:${DB_PASSWORD:-nexo_demo}@db:5432/nexo
+      DATABASE_SSL: 'false'
+      PORT: '3000'
+      AI_PROVIDER: ${AI_PROVIDER:-replay}
+      AI_TIMEOUT_MS: '5000'
+      SESSION_HOURS: '8'
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - '3000:3000'
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://localhost:3000/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - '8080:80'
+
+  # Base de pruebas local (R0). Las pruebas vacian las tablas en cada ejecucion.
   db-test:
     image: postgres:16.4
     profiles: ['test']
@@ -10,7 +67,7 @@ services:
       POSTGRES_DB: nexo_test
     ports:
       - '54329:5432'
-    # Datos solo en memoria: las pruebas vacian las tablas en cada ejecucion.
+    # Datos solo en memoria.
     tmpfs:
       - /var/lib/postgresql/data
     healthcheck:
@@ -18,3 +75,6 @@ services:
       interval: 3s
       timeout: 3s
       retries: 20
+
+volumes:
+  dbdata: {}

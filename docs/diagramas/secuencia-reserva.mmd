@@ -1,0 +1,20 @@
+sequenceDiagram
+  participant C1 as Coordinador (peticion 1, A-001, clave k1)
+  participant C2 as Coordinador (peticion 2, A-002, clave k2)
+  participant API
+  participant DB as PostgreSQL
+  C1->>API: POST /requests/A-001/reserve
+  C2->>API: POST /requests/A-002/reserve
+  API->>API: autenticar (401), rol (403), buscar en la organizacion (404), exigir Idempotency-Key (400)
+  API->>DB: BEGIN, bloqueo de la llave (advisory lock)
+  DB-->>API: ¿llave ya guardada? no
+  API->>DB: SELECT solicitud FOR UPDATE (estado ENVIADA)
+  API->>DB: UPDATE inventory reserved+7 WHERE disponible >= 7
+  DB-->>API: 1 fila (ok)
+  API->>DB: UPDATE estado RESERVADA, INSERT auditoria, INSERT llave, COMMIT
+  API-->>C1: 200 RESERVADA
+  API->>DB: BEGIN, bloqueo de la llave, SELECT solicitud FOR UPDATE
+  API->>DB: UPDATE inventory reserved+7 WHERE disponible >= 7
+  DB-->>API: 0 filas (disponible 3)
+  API->>DB: ROLLBACK (sin auditoria ni llave)
+  API-->>C2: 409 STOCK_INSUFICIENTE, sin cambios

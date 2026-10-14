@@ -1,0 +1,191 @@
+# SPEC-003 Inventario y transiciones
+
+Autor: PENDIENTE (Luis). Revisor: PENDIENTE (Carlos B). Fecha UTC: PENDIENTE (Luis). Commit: PENDIENTE (Luis).
+
+## Propósito y actores
+
+Reservar, cancelar, despachar y entregar solicitudes sin que el inventario quede negativo ni se prometa dos veces.
+Actores: COORDINADOR (reserva y entrega), BODEGA (despacha) y SOLICITANTE dueño (cancela).
+
+## Alcance y exclusiones
+
+Incluye: reservar (todo o nada, con idempotencia), cancelar una RESERVADA y efectos de inventario de cada transición,
+transiciones inválidas, concurrencia e idempotencia (RF07).
+No incluye: devoluciones, reabastecimiento, cantidades parciales, pagos. La creación y el envío están en SPEC-002.
+
+## Requisitos de referencia
+
+RF04 (transiciones), RF05, RF06, RF07 y RNF02.
+
+## Historia de usuario y reglas
+
+HU-03. Como coordinador y bodega quiero reservar, despachar, entregar y cancelar sin doble reserva.
+
+Efectos de cada transición:
+
+| Transición | Quién | Efecto en inventario | Evento de auditoría |
+|---|---|---|---|
+| ENVIADA a RESERVADA | COORDINADOR | `reserved += cantidad` por línea (todo o nada) | RESERVAR |
+| RESERVADA a DESPACHADA | BODEGA | `on_hand -= cantidad` y `reserved -= cantidad` | DESPACHAR |
+| DESPACHADA a ENTREGADA | COORDINADOR | ninguno | ENTREGAR |
+| ENVIADA a CANCELADA | SOLICITANTE dueño | ninguno | CANCELAR |
+| RESERVADA a CANCELADA | SOLICITANTE dueño | `reserved -= cantidad` (físico igual) | CANCELAR |
+
+Oráculos del enunciado con ORG-A y KIT-ALIMENTO (físico 10, reservado 0) y A-001 de 7 unidades:
+reserva = físico 10, reservado 7, disponible 3; cancelación = 10, 0, 10; despacho = 3, 0, 3;
+A-001 y A-002 a la vez = una 200 y otra 409, y queda 10, 7, 3 (no se fija cuál gana).
+
+Idempotencia (RF07 y Q5):
+
+| Situación | Resultado |
+|---|---|
+| Falta `Idempotency-Key` | 400 `LLAVE_REQUERIDA`, sin cambios |
+| Misma clave, usuario, organización, operación y contenido | Misma respuesta, encabezado `Idempotent-Replay: true`, un solo efecto |
+| Misma clave con contenido distinto | 409 `LLAVE_CON_OTRO_CONTENIDO`, sin cambios |
+| Primera petición con error (409, 4xx, 5xx) | No se guarda; se puede reintentar con la misma clave |
+| Resultado exitoso | Se conserva al menos 24 horas; pasado ese tiempo la clave puede reutilizarse |
+| Clave de otra persona u organización | Es otra clave: nunca devuelve la respuesta ajena |
+
+El contenido que se compara es la operación y el código de la solicitud. La clave se procesa **después** de autenticar y autorizar.
+
+## Entradas, proceso, salidas y casos límite
+
+El bloque estructurado es la fuente vinculante.
+
+<!-- spec-data:start -->
+```json
+{
+  "id": "SPEC-003",
+  "version": "0.2",
+  "name": "Inventario y transiciones",
+  "story": {
+    "id": "HU-03",
+    "as": "coordinador o encargado de bodega de una organización",
+    "want": "reservar, despachar, entregar y cancelar solicitudes con efectos exactos sobre el inventario",
+    "soThat": "nunca se prometa dos veces el mismo inventario ni quede una cantidad negativa"
+  },
+  "requirements": ["RF04", "RF05", "RF06", "RF07", "RNF02"],
+  "description": "Transiciones de estado con efectos atómicos sobre el inventario, reserva de todo o nada, idempotencia con Idempotency-Key y seguridad ante concurrencia sobre una base real.",
+  "inputs": [
+    { "field": "code (ruta)", "type": "identificador de solicitud", "validation": ["existe", "pertenece a la organización de la sesión"] },
+    { "field": "Idempotency-Key", "type": "encabezado cadena", "validation": ["obligatorio solo en reservar", "no vacío", "hasta 128 caracteres"] },
+    { "field": "rol de la sesión", "type": "rol", "validation": ["reservar y entregar: COORDINADOR", "despachar: BODEGA", "cancelar: SOLICITANTE dueño"] },
+    { "field": "estado actual de la solicitud", "type": "enumeración", "validation": ["debe ser el estado de origen de la transición pedida"] }
+  ],
+  "process": [
+    "Asignar correlationId, autenticar (401) y comprobar el rol de la operación (403)",
+    "Reservar: exigir el encabezado Idempotency-Key (400 si falta) y buscar la solicitud filtrando por la organización de la sesión (404)",
+    "Abrir una transacción y tomar un bloqueo por la combinación organización, usuario, operación y clave para serializar repeticiones simultáneas",
+    "Si la clave ya tiene un resultado exitoso guardado de menos de 24 horas: mismo contenido repite la respuesta sin efectos; contenido distinto responde 409",
+    "Bloquear la fila de la solicitud con SELECT FOR UPDATE y exigir el estado de origen (409 si no)",
+    "Reservar: procesar las líneas en orden fijo de SKU con un UPDATE condicional que solo aplica si disponible es mayor o igual a la cantidad; si una línea no aplica, deshacer toda la transacción y responder 409 STOCK_INSUFICIENTE",
+    "Despachar y cancelar RESERVADA: ajustar el inventario por línea en la misma transacción; entregar y cancelar ENVIADA no tocan inventario",
+    "Cambiar el estado, insertar un solo evento de auditoría con identidad, organización, recurso, acción, estados, fecha UTC y correlationId, y guardar la clave de idempotencia en la misma transacción",
+    "Confirmar la transacción; cualquier error inesperado deshace todo y responde 500 sin dejar efectos parciales"
+  ],
+  "outputs": [
+    { "condition": "reserva con disponible suficiente en todas las líneas", "result": "200 con la solicitud RESERVADA, reservado incrementado y un evento RESERVAR" },
+    { "condition": "alguna línea sin disponible", "result": "409 STOCK_INSUFICIENTE con el SKU, sin cambios en estado, inventario ni auditoría" },
+    { "condition": "estado de origen incorrecto", "result": "409 ESTADO_INVALIDO y nada cambia" },
+    { "condition": "falta Idempotency-Key en reservar", "result": "400 LLAVE_REQUERIDA y nada cambia" },
+    { "condition": "misma clave con contenido distinto", "result": "409 LLAVE_CON_OTRO_CONTENIDO y nada cambia" },
+    { "condition": "repetición de una reserva exitosa con la misma clave y contenido", "result": "200 con la misma respuesta, Idempotent-Replay true y ningún efecto nuevo" },
+    { "condition": "cancelar RESERVADA, despachar o entregar con permisos y estado correctos", "result": "200 con el nuevo estado e inventario según la tabla de efectos" },
+    { "condition": "rol sin permiso o solicitud de otra organización", "result": "403 PROHIBIDO o 404 NO_ENCONTRADA sin cambios" }
+  ],
+  "businessRules": [
+    "Disponible es existencia física menos reservado",
+    "Existencia física, reservado y disponible nunca son negativos; la base lo impone con CHECK",
+    "La reserva cubre todas las líneas o ninguna",
+    "Solo se reserva una solicitud ENVIADA; solo se despacha una RESERVADA; solo se entrega una DESPACHADA",
+    "Toda transición no indicada responde 409 y conserva datos e inventario",
+    "Cancelar una RESERVADA libera exactamente su reserva y la existencia física no cambia; despachar baja existencia física y reservado; entregar y cancelar una ENVIADA no cambian inventario",
+    "Estado, inventario, evento de auditoría y clave de idempotencia se persisten en una sola transacción",
+    "El resultado exitoso de una reserva se conserva al menos 24 horas; los errores no se guardan y pueden reintentarse con la misma clave",
+    "Pasadas 24 horas la clave deja de tener efecto: se trata como nueva aunque el contenido sea distinto, y se aplican las reglas normales de estado y stock",
+    "Un fallo inesperado responde 500 ERROR_INTERNO, deshace la transacción y no guarda la clave",
+    "La clave de idempotencia se evalúa después de autenticar y autorizar y nunca devuelve la respuesta de otro usuario u organización",
+    "Un SKU sin fila de inventario en la organización se trata como disponible 0",
+    "Códigos de error: ESTADO_INVALIDO, STOCK_INSUFICIENTE, LLAVE_REQUERIDA, LLAVE_CON_OTRO_CONTENIDO, PROHIBIDO, NO_ENCONTRADA, ERROR_INTERNO"
+  ],
+  "edgeCases": [
+    "A-001 y A-002 piden 7 de KIT-ALIMENTO cada una con disponible 10 y se reservan al mismo tiempo",
+    "Diez peticiones simultáneas de 1 unidad con 10 de existencia y quince peticiones en total",
+    "Dos despachos simultáneos de la misma solicitud RESERVADA",
+    "Cancelar y despachar la misma solicitud al mismo tiempo",
+    "Misma clave de idempotencia usada en dos peticiones simultáneas",
+    "Clave reutilizada pasadas 24 horas",
+    "Disponible exactamente igual a la cantidad pedida y una unidad menos",
+    "Caída o error entre la primera y la segunda línea antes del commit",
+    "SKU activo sin fila de inventario en la organización"
+  ],
+  "acceptanceCriteria": [
+    { "id": "AC-RF05-01", "given": "el coordinador de ORG-A y A-001 ENVIADA con 7 de KIT-ALIMENTO, físico 10 y reservado 0", "when": "reserva A-001 con una Idempotency-Key nueva", "then": "responde 200, A-001 queda RESERVADA y el inventario queda físico 10, reservado 7, disponible 3, con un evento RESERVAR" },
+    { "id": "AC-RF05-02", "given": "una solicitud ENVIADA de ORG-A con 2 de KIT-AGUA (físico 20) y 11 de KIT-ALIMENTO (físico 10, reservado 0)", "when": "el coordinador la reserva", "then": "responde 409 STOCK_INSUFICIENTE y KIT-AGUA y KIT-ALIMENTO siguen con reservado 0, la solicitud sigue ENVIADA, no hay evento de auditoría y no se guarda la clave" },
+    { "id": "AC-RF05-03", "given": "el borrador A-003 de ORG-A", "when": "el coordinador intenta reservarlo", "then": "responde 409 ESTADO_INVALIDO y el estado y el inventario no cambian" },
+    { "id": "AC-RF05-04", "given": "A-001 ya RESERVADA con la clave K1 y reservado 7", "when": "el coordinador la reserva otra vez con la clave K2", "then": "responde 409 ESTADO_INVALIDO, el reservado sigue en 7 y hay un solo evento RESERVAR" },
+    { "id": "AC-RF05-05", "given": "un SKU activo KIT-NUEVO sin fila de inventario en ORG-A y una solicitud ENVIADA con 1 unidad de KIT-NUEVO", "when": "el coordinador la reserva", "then": "responde 409 STOCK_INSUFICIENTE porque el disponible se trata como 0, y no se crea fila de inventario ni evento" },
+    { "id": "AC-RF05-06", "given": "A-001 RESERVADA con KIT-ALIMENTO físico 10, reservado 7, disponible 3, y dos solicitudes ENVIADA nuevas de 3 y de 1 unidad", "when": "el coordinador reserva la de 3 y luego la de 1", "then": "la de 3 responde 200 y deja reservado 10 y disponible 0, y la de 1 responde 409 STOCK_INSUFICIENTE sin cambiar nada" },
+    { "id": "AC-RF06-01", "given": "A-001 RESERVADA con 7 de KIT-ALIMENTO, físico 10, reservado 7", "when": "el solicitante dueño la cancela", "then": "responde 200, A-001 queda CANCELADA y el inventario queda físico 10, reservado 0, disponible 10, con un evento CANCELAR" },
+    { "id": "AC-RF06-02", "given": "A-001 RESERVADA con 7 de KIT-ALIMENTO, físico 10, reservado 7", "when": "bodega de ORG-A la despacha", "then": "responde 200, A-001 queda DESPACHADA y el inventario queda físico 3, reservado 0, disponible 3, con un evento DESPACHAR" },
+    { "id": "AC-RF06-03", "given": "A-001 DESPACHADA con KIT-ALIMENTO físico 3, reservado 0", "when": "el coordinador de ORG-A la marca entregada", "then": "responde 200, A-001 queda ENTREGADA, el inventario sigue en físico 3, reservado 0 y hay un evento ENTREGAR" },
+    { "id": "AC-RF06-04", "given": "A-002 ENVIADA con 7 de KIT-ALIMENTO y el inventario en físico 10, reservado 0", "when": "el solicitante dueño la cancela", "then": "responde 200, A-002 queda CANCELADA y el inventario sigue idéntico en físico 10, reservado 0, disponible 10" },
+    { "id": "AC-RF06-05", "given": "A-001 DESPACHADA con KIT-ALIMENTO físico 3, reservado 0", "when": "el solicitante dueño intenta cancelarla", "then": "responde 409 ESTADO_INVALIDO, A-001 sigue DESPACHADA y el inventario sigue en físico 3, reservado 0" },
+    { "id": "AC-RF04-09", "given": "solicitudes de ORG-A en cada estado del flujo", "when": "se intentan todas las transiciones no permitidas, entre ellas despachar una ENVIADA, entregar una RESERVADA, reservar una DESPACHADA, despachar una ENTREGADA, cancelar una DESPACHADA, cancelar una ENTREGADA, cancelar una CANCELADA y reservar una CANCELADA", "then": "todas responden 409 ESTADO_INVALIDO y ningún dato, inventario ni auditoría cambia" },
+    { "id": "AC-RF04-10", "given": "A-001 RESERVADA, A-002 ENVIADA y una DESPACHADA en ORG-A", "when": "el coordinador intenta despachar, bodega intenta reservar y entregar, el auditor intenta reservar y el solicitante intenta despachar", "then": "todas responden 403 PROHIBIDO y estados, inventario y auditoría no cambian" },
+    { "id": "AC-RF04-11", "given": "A-001 ENVIADA de ORG-A con KIT-ALIMENTO físico 10 y reservado 0", "when": "el coordinador reserva, bodega despacha y el coordinador entrega, en ese orden", "then": "los estados persistidos son RESERVADA, DESPACHADA y ENTREGADA, el inventario termina físico 3, reservado 0 y hay tres eventos en el orden RESERVAR, DESPACHAR y ENTREGAR" },
+    { "id": "AC-RF07-01", "given": "una reserva exitosa de A-001 con la clave K", "when": "el mismo coordinador repite la petición con la misma clave K y el mismo contenido", "then": "responde 200 con el mismo cuerpo, el encabezado Idempotent-Replay es true, el reservado sigue en 7 y hay un solo evento RESERVAR" },
+    { "id": "AC-RF07-02", "given": "la clave K ya usada con éxito para A-001", "when": "el mismo coordinador usa K para reservar A-002", "then": "responde 409 LLAVE_CON_OTRO_CONTENIDO, A-002 sigue ENVIADA y el reservado sigue en 7" },
+    { "id": "AC-RF07-03", "given": "A-001 ENVIADA", "when": "el coordinador reserva sin el encabezado Idempotency-Key y luego con el encabezado vacío", "then": "ambas responden 400 LLAVE_REQUERIDA, A-001 sigue ENVIADA y el inventario no cambia" },
+    { "id": "AC-RF07-04", "given": "el coordinador de ORG-A reservó A-001 con la clave K y el coordinador de ORG-B tiene B-001 ENVIADA con 2 de KIT-HIGIENE", "when": "el coordinador de ORG-B reserva B-001 con la misma clave K", "then": "responde 200 con el cuerpo de B-001 y sin Idempotent-Replay, y KIT-HIGIENE de ORG-B queda con reservado 2; nunca devuelve la respuesta de A-001" },
+    { "id": "AC-RF07-05", "given": "una reserva rechazada con 409 STOCK_INSUFICIENTE usando la clave K y luego stock liberado", "when": "el coordinador repite la reserva con la misma clave K", "then": "responde 200 con un efecto único porque los errores no se guardan y pueden reintentarse" },
+    { "id": "AC-RF07-06", "given": "una reserva exitosa de A-001 con la clave K a las 2030-01-10T14:00:00Z", "when": "se repite K a las 2030-01-11T13:59:59Z y luego a las 2030-01-11T14:00:01Z", "then": "la primera repetición devuelve la respuesta guardada con Idempotent-Replay true y la segunda trata la clave como nueva y responde 409 ESTADO_INVALIDO sin repetir la respuesta" },
+    { "id": "AC-RF07-07", "given": "la clave K usada con éxito por el coordinador de ORG-A para A-001", "when": "se repite la petición sin sesión y luego con el solicitante de ORG-A", "then": "responde 401 y 403 respectivamente, sin devolver la respuesta guardada" },
+    { "id": "AC-RF07-08", "given": "una reserva de una solicitud con dos líneas en la que se inyecta un fallo inesperado después de actualizar la primera línea y antes del commit", "when": "el coordinador la reserva", "then": "responde 500, el inventario de ambas líneas queda como antes, la solicitud sigue ENVIADA y no hay evento ni clave guardada" },
+    { "id": "AC-RF07-09", "given": "A-001 ENVIADA y dos peticiones simultáneas con la misma clave K y el mismo contenido", "when": "ambas llegan al mismo tiempo", "then": "ambas responden 200, solo una aplica el efecto, el reservado es 7 y hay un solo evento RESERVAR" },
+    { "id": "AC-RNF02-01", "given": "A-001 y A-002 ENVIADA con 7 de KIT-ALIMENTO cada una, físico 10 y reservado 0", "when": "el coordinador las reserva al mismo tiempo con claves distintas, repetido 20 veces con datos reiniciados", "then": "en cada repetición exactamente una responde 200 y la otra 409, y queda físico 10, reservado 7, disponible 3 con un solo evento RESERVAR; no se fija cuál gana" },
+    { "id": "AC-RNF02-02", "given": "15 solicitudes ENVIADA de 1 unidad de KIT-ALIMENTO cada una en ORG-A con físico 10 y reservado 0", "when": "el coordinador las reserva todas al mismo tiempo", "then": "exactamente 10 responden 200 y 5 responden 409, y queda físico 10, reservado 10, disponible 0, sin valores negativos" },
+    { "id": "AC-RNF02-03", "given": "la base real de pruebas con KIT-ALIMENTO de ORG-A en físico 10 y reservado 7", "when": "se ejecuta un UPDATE directo que deja reservado 11 y otro que deja físico menor que cero", "then": "ambas sentencias fallan por una restricción CHECK y los valores no cambian" },
+    { "id": "AC-RNF02-04", "given": "A-001 RESERVADA con físico 10 y reservado 7", "when": "bodega envía dos despachos simultáneos de A-001", "then": "uno responde 200 y el otro 409, y queda físico 3, reservado 0 con un solo evento DESPACHAR" },
+    { "id": "AC-RNF02-05", "given": "A-001 RESERVADA con físico 10 y reservado 7", "when": "el solicitante dueño la cancela y bodega la despacha al mismo tiempo", "then": "exactamente una de las dos gana; el resultado es físico 10 y reservado 0 con A-001 CANCELADA, o físico 3 y reservado 0 con A-001 DESPACHADA, y nunca un valor intermedio ni negativo" }
+  ]
+}
+```
+<!-- spec-data:end -->
+
+## Datos y contrato esperado
+
+| Método | Ruta | Quién | Éxito | Errores |
+|---|---|---|---|---|
+| POST | `/requests/{code}/reserve` | COORDINADOR | 200 `{ code, status: RESERVADA }` | 400, 401, 403, 404, 409 |
+| POST | `/requests/{code}/dispatch` | BODEGA | 200 `{ code, status: DESPACHADA }` | 401, 403, 404, 409 |
+| POST | `/requests/{code}/deliver` | COORDINADOR | 200 `{ code, status: ENTREGADA }` | 401, 403, 404, 409 |
+| POST | `/requests/{code}/cancel` | SOLICITANTE dueño | 200 `{ code, status: CANCELADA }` | 401, 403, 404, 409 |
+
+Ejemplo de error de stock: `{ "error": "STOCK_INSUFICIENTE", "mensaje": "No hay disponible suficiente de KIT-ALIMENTO.", "campo": "lines.0.sku", "correlationId": "..." }`.
+
+## Supuestos y preguntas
+
+| ID | Supuesto o pregunta | Estado |
+|---|---|---|
+| Q5 | Solo se guardan las respuestas exitosas por 24 horas; los errores 4xx y 5xx no se guardan. | Abierta, con supuesto provisional |
+| Q8 | Un SKU sin fila de inventario cuenta como 0 y la reserva responde 409. | Abierta, con supuesto provisional |
+| S1 | `Idempotency-Key` solo es obligatorio en reservar; las otras transiciones son idempotentes por estado (la repetición responde 409). | Supuesto del equipo |
+| S2 | El encabezado ausente se valida después de autenticar, comprobar rol y buscar la solicitud (paso 5 del orden de controles). | Supuesto del equipo |
+| S3 | El contenido que se compara en la idempotencia es la operación y el código de la solicitud. | Supuesto del equipo |
+
+## Riesgos y pruebas previstas
+
+| Riesgo | Control | Prueba prevista |
+|---|---|---|
+| Doble reserva por concurrencia | UPDATE condicional, bloqueo de la solicitud y CHECK | AC-RNF02-01 y AC-RNF02-02 repetidas 20 veces |
+| Reserva parcial | Una sola transacción con ROLLBACK | AC-RF05-02 y AC-RF07-08 |
+| Reintentos que duplican | Clave única y bloqueo por clave | AC-RF07-01 a AC-RF07-09 |
+| Interbloqueo entre solicitudes | Líneas en orden fijo de SKU | AC-RNF02-02 |
+
+## Cambios de versión
+
+| Versión | Fecha UTC | Cambio |
+|---|---|---|
+| 0.1 | PENDIENTE (Luis) | Borrador inicial generado con Claude Code. |
+| 0.2 | PENDIENTE (Luis) | Revisión crítica IA-02: la regla de reutilización de la clave pasadas 24 horas estaba solo en el texto y pasa al bloque vinculante (H-03); se declara el 500 ERROR_INTERNO que usa AC-RF07-08 y que el enunciado no lista (H-02). |

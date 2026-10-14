@@ -12,6 +12,7 @@ export default tseslint.config(
       'docs/**',
       'entregas/**',
       'playwright-report/**',
+      '**/playwright-report/**',
       'test-results/**',
     ],
   },
@@ -20,6 +21,19 @@ export default tseslint.config(
   {
     languageOptions: {
       globals: { ...globals.node },
+    },
+  },
+  {
+    // Scripts de k6: variables globales propias de la herramienta.
+    files: ['loadtest/**/*.js'],
+    languageOptions: {
+      globals: { __ENV: 'readonly', __VU: 'readonly', __ITER: 'readonly' },
+    },
+  },
+  {
+    files: ['apps/web/src/**/*.{ts,tsx}'],
+    languageOptions: {
+      globals: { ...globals.browser },
     },
   },
 );
